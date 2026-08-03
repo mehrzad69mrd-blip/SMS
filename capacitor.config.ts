@@ -5,7 +5,12 @@ const config: CapacitorConfig = {
   appName: 'SMS Hub & Scheduler',
   webDir: 'dist',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https',
+    url: 'https://ais-dev-vlumqznxd2rtpvfhuujgno-499487228125.us-west2.run.app',
+    allowNavigation: [
+      'ais-dev-vlumqznxd2rtpvfhuujgno-499487228125.us-west2.run.app',
+      'ais-pre-vlumqznxd2rtpvfhuujgno-499487228125.us-west2.run.app'
+    ]
   }
 };
 

@@ -8,6 +8,13 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { PRESET_TEMPLATES } from "./presets";
 import { SMSCategory, SimulatedSMS } from "./types";
+import { 
+  isNativeAndroid, 
+  checkSmsPermissions, 
+  requestSmsPermissions, 
+  fetchRealInboxSMS, 
+  sendNativeSMS 
+} from "./lib/realSms";
 
 export default function App() {
   // App-wide Language
@@ -30,6 +37,7 @@ export default function App() {
   const [schedText, setSchedText] = useState("");
   const [schedTime, setSchedTime] = useState("");
   const [scheduling, setScheduling] = useState(false);
+  const [sendInstantly, setSendInstantly] = useState(false);
 
   // Notifications & UI feedback
   const [notification, setNotification] = useState<{title: string, body: string} | null>(null);
@@ -37,6 +45,168 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"phone" | "analytics">("phone");
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Native Android Integration States
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [hasSmsPermission, setHasSmsPermission] = useState(false);
+  const [smsViewSource, setSmsViewSource] = useState<"demo" | "real">("demo");
+  const [nativeSmsList, setNativeSmsList] = useState<SimulatedSMS[]>([]);
+
+  // Local Persian/English Offline Classifier
+  const classifySmsLocally = (text: string, sender: string): { category: SMSCategory; senderName: string } => {
+    const lowerText = text.toLowerCase();
+    const lowerSender = sender.toLowerCase();
+    
+    let category: SMSCategory = "personal";
+    let senderName = sender;
+
+    if (
+      lowerText.includes("کد تایید") || 
+      lowerText.includes("رمز یکبار") || 
+      lowerText.includes("otp") || 
+      lowerText.includes("رمز پویا") ||
+      lowerText.includes("verification") ||
+      lowerText.includes("code:")
+    ) {
+      category = "otp";
+      if (lowerSender.includes("digikala")) senderName = "دیجی‌کالا";
+      else if (lowerSender.includes("snapp")) senderName = "اسنپ";
+      else if (lowerSender.includes("tapsi")) senderName = "تپسی";
+      else if (lowerSender.includes("divar")) senderName = "دیوار";
+    }
+    else if (
+      lowerText.includes("واریز") || 
+      lowerText.includes("برداشت") || 
+      lowerText.includes("مانده") || 
+      lowerText.includes("بانک") || 
+      lowerText.includes("melli") || 
+      lowerText.includes("mellat") || 
+      lowerText.includes("saman") || 
+      lowerText.includes("pasargad") || 
+      lowerText.includes("tejarat") ||
+      lowerText.includes("rial") ||
+      lowerText.includes("ریال")
+    ) {
+      category = "transactional";
+      if (lowerSender.includes("melli") || lowerText.includes("ملی")) senderName = "بانک ملی";
+      else if (lowerSender.includes("mellat") || lowerText.includes("ملت")) senderName = "بانک ملت";
+      else if (lowerSender.includes("saman") || lowerText.includes("سامان")) senderName = "بانک سامان";
+      else if (lowerSender.includes("pasargad") || lowerText.includes("پاسارگاد")) senderName = "بانک پاسارگاد";
+      else if (lowerSender.includes("tejarat") || lowerText.includes("تجارت")) senderName = "بانک تجارت";
+      else senderName = "اطلاع‌رسانی بانکی";
+    }
+    else if (
+      lowerText.includes("تخفیف") || 
+      lowerText.includes("جشنواره") || 
+      lowerText.includes("تور") || 
+      lowerText.includes("کاهش قیمت") || 
+      lowerText.includes("خرید آنلاین") ||
+      lowerText.includes("فروش ویژه") ||
+      lowerText.includes("٪") ||
+      lowerText.includes("off")
+    ) {
+      category = "promotional";
+    }
+    else if (
+      lowerText.includes("برنده") || 
+      lowerText.includes("قرعه‌کشی") || 
+      lowerText.includes("سود تضامنی") || 
+      lowerText.includes("شکایت") || 
+      lowerText.includes("کلیک کنید") ||
+      lowerText.includes("ثبت نام یارانه") ||
+      (lowerSender.match(/^09\d{9}$/) && (lowerText.includes("ابلاغیه") || lowerText.includes("ثنا") || lowerText.includes("عدلیران")))
+    ) {
+      category = "spam";
+    }
+
+    return { category, senderName };
+  };
+
+  const loadNativeSms = async () => {
+    setLoading(true);
+    try {
+      const rawSms = await fetchRealInboxSMS();
+      const mapped: SimulatedSMS[] = rawSms.map((s) => {
+        const localClass = classifySmsLocally(s.text, s.sender);
+        return {
+          id: s.id,
+          sender: s.sender,
+          receiver: "من",
+          text: s.text,
+          timestamp: new Date(s.timestamp).toISOString(),
+          category: localClass.category,
+          senderName: localClass.senderName,
+          isRead: s.isRead,
+          status: "delivered"
+        };
+      });
+      setNativeSmsList(mapped);
+    } catch (err) {
+      console.error("Failed to load native SMS:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const checkAndLoadNativeSms = async () => {
+    const granted = await checkSmsPermissions();
+    setHasSmsPermission(granted);
+    if (granted) {
+      await loadNativeSms();
+    }
+  };
+
+  const handleRequestPermission = async () => {
+    await requestSmsPermissions();
+    setTimeout(async () => {
+      const granted = await checkSmsPermissions();
+      setHasSmsPermission(granted);
+      if (granted) {
+        await loadNativeSms();
+      }
+    }, 1500);
+  };
+
+  const handleAnalyzeWithAI = async (msg: SimulatedSMS) => {
+    setErrorMsg(null);
+    setLoading(true);
+    try {
+      const catRes = await fetch("/api/categorize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sender: msg.sender, text: msg.text })
+      });
+      const catResult = await catRes.json();
+
+      if (catResult.success) {
+        const { category, summary, senderName, extractedInfo } = catResult.classification;
+        
+        const updatedMsg: SimulatedSMS = {
+          ...msg,
+          category,
+          summary,
+          senderName: senderName || msg.senderName,
+          extractedInfo
+        };
+        
+        setNativeSmsList(prev => prev.map(m => m.id === msg.id ? updatedMsg : m));
+        setSelectedSMS(updatedMsg);
+        
+        setNotification({
+          title: lang === "fa" ? "تحلیل هوشمند پیام موفقیت‌آمیز بود" : "AI analysis completed",
+          body: summary || (lang === "fa" ? "دسته بندی با موفقیت انجام شد." : "Classification completed successfully.")
+        });
+        setTimeout(() => setNotification(null), 4000);
+      } else {
+        setErrorMsg(lang === "fa" ? "خطا در دسته‌بندی با هوش مصنوعی" : "AI categorization error");
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(lang === "fa" ? "خطا در دسته‌بندی با هوش مصنوعی" : "AI categorization error");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Fetch messages from backend
   const fetchMessages = async () => {
@@ -54,6 +224,12 @@ export default function App() {
 
   useEffect(() => {
     fetchMessages();
+    const isM = isNativeAndroid();
+    setIsAndroid(isM);
+    if (isM) {
+      setSmsViewSource("real");
+      checkAndLoadNativeSms();
+    }
   }, []);
 
   // Poll for scheduled messages every 2.5 seconds to deliver them if current time is past scheduledTime
@@ -72,6 +248,12 @@ export default function App() {
               const result = await res.json();
               if (result.success) {
                 updatedAny = true;
+                
+                // IF NATIVE ANDROID: Send the real SMS!
+                if (isAndroid) {
+                  await sendNativeSMS(msg.receiver, msg.text);
+                }
+
                 // Trigger simulated Android sound / visual notification
                 setNotification({
                   title: lang === "fa" ? "پیامک زمان‌بندی شده ارسال شد" : "Scheduled SMS Sent",
@@ -92,7 +274,7 @@ export default function App() {
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [messages, lang]);
+  }, [messages, lang, isAndroid]);
 
   // Handle preset selection
   const handlePresetChange = (presetId: string) => {
@@ -103,6 +285,7 @@ export default function App() {
       return;
     }
     const preset = PRESET_TEMPLATES.find(p => p.id === presetId);
+
     if (preset) {
       setSimSender(preset.sender);
       setSimText(preset.text);
@@ -169,37 +352,84 @@ export default function App() {
     }
   };
 
-  // Handle scheduling an SMS
+  // Handle scheduling or sending an SMS
   const handleScheduleSMS = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!schedReceiver.trim() || !schedText.trim() || !schedTime) {
-      setErrorMsg(lang === "fa" ? "لطفا تمام فیلدهای زمان‌بندی را پر کنید." : "Please fill out all schedule fields.");
+    if (!schedReceiver.trim() || !schedText.trim()) {
+      setErrorMsg(lang === "fa" ? "لطفا شماره گیرنده و متن پیام را وارد کنید." : "Please fill out receiver and text.");
       return;
     }
+    
+    if (!sendInstantly && !schedTime) {
+      setErrorMsg(lang === "fa" ? "لطفا تاریخ و زمان ارسال را مشخص کنید یا گزینه ارسال فوری را فعال کنید." : "Please set delivery time or choose Instant Send.");
+      return;
+    }
+
     setErrorMsg(null);
     setScheduling(true);
 
     try {
-      const res = await fetch("/api/messages/schedule", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          receiver: schedReceiver,
-          text: schedText,
-          scheduledTime: new Date(schedTime).toISOString()
-        })
-      });
-      const result = await res.json();
-      if (result.success) {
-        // Reset scheduling fields
-        setSchedReceiver("");
-        setSchedText("");
-        setSchedTime("");
-        await fetchMessages();
+      if (sendInstantly) {
+        // Send instantly via native line if on Android
+        let sentNative = false;
+        if (isAndroid) {
+          sentNative = await sendNativeSMS(schedReceiver, schedText);
+        }
+
+        // Also save to database
+        const res = await fetch("/api/messages/simulate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sender: "من",
+            text: schedText,
+            category: "personal",
+            senderName: lang === "fa" ? "من" : "Me"
+          })
+        });
+        const result = await res.json();
+        
+        if (result.success) {
+          setNotification({
+            title: lang === "fa" ? "پیامک با موفقیت ارسال شد" : "SMS Sent Successfully",
+            body: sentNative 
+              ? (lang === "fa" ? "پیامک واقعی از سیم‌کارت شما ارسال شد." : "Real SMS sent from your SIM card.")
+              : (lang === "fa" ? "پیامک شبیه‌سازی شد (برای ارسال واقعی برنامه را روی گوشی نصب کنید)." : "SMS simulated successfully.")
+          });
+          setTimeout(() => setNotification(null), 5000);
+          
+          setSchedReceiver("");
+          setSchedText("");
+          await fetchMessages();
+        }
+      } else {
+        // Schedule for later
+        const res = await fetch("/api/messages/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            receiver: schedReceiver,
+            text: schedText,
+            scheduledTime: new Date(schedTime).toISOString()
+          })
+        });
+        const result = await res.json();
+        if (result.success) {
+          setSchedReceiver("");
+          setSchedText("");
+          setSchedTime("");
+          await fetchMessages();
+          
+          setNotification({
+            title: lang === "fa" ? "پیامک زمان‌بندی شد" : "SMS Scheduled",
+            body: lang === "fa" ? "پیامک به صف خروجی اضافه شد." : "Added to scheduled queue."
+          });
+          setTimeout(() => setNotification(null), 4000);
+        }
       }
     } catch (err) {
       console.error(err);
-      setErrorMsg(lang === "fa" ? "خطا در زمان‌بندی پیامک" : "Error scheduling SMS");
+      setErrorMsg(lang === "fa" ? "خطا در فرآیند ارسال یا زمان‌بندی" : "Error sending or scheduling SMS");
     } finally {
       setScheduling(false);
     }
@@ -262,8 +492,10 @@ export default function App() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const messagesToUse = smsViewSource === "real" ? nativeSmsList : messages;
+
   // Filter messages based on search query and category tab
-  const filteredMessages = messages.filter(m => {
+  const filteredMessages = messagesToUse.filter(m => {
     const matchCat = selectedCategory === "all" || m.category === selectedCategory;
     const matchSearch = searchQuery.trim() === "" || 
       m.text.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -273,8 +505,8 @@ export default function App() {
   });
 
   // Calculate stats
-  const totalSMS = messages.length;
-  const categoryCounts = messages.reduce((acc, m) => {
+  const totalSMS = messagesToUse.length;
+  const categoryCounts = messagesToUse.reduce((acc, m) => {
     acc[m.category] = (acc[m.category] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -284,7 +516,7 @@ export default function App() {
   // Extract transaction values to display custom wallet intelligence
   const extractTransactionSum = () => {
     let sum = 0;
-    messages.forEach(m => {
+    messagesToUse.forEach(m => {
       if (m.category === "transactional" && m.text) {
         // Regex to match Iranian Rial amount pattern like ۱۲,۴۰۰,۰۰۰ or 5,000,000 or ۵۰۰۰۰۰
         const match = m.text.replace(/,/g, "").match(/\d+/);
@@ -583,6 +815,32 @@ export default function App() {
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-slate-600">{lang === "fa" ? "نوع ارسال:" : "Delivery Type:"}</label>
+                      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 h-[38px] items-center">
+                        <button
+                          type="button"
+                          onClick={() => setSendInstantly(false)}
+                          className={`flex-1 text-[10px] font-bold py-1 rounded-lg transition-all ${
+                            !sendInstantly ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          {lang === "fa" ? "زمان‌بندی شده" : "Scheduled"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSendInstantly(true)}
+                          className={`flex-1 text-[10px] font-bold py-1 rounded-lg transition-all ${
+                            sendInstantly ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          {lang === "fa" ? "ارسال فوری" : "Instant"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {!sendInstantly && (
+                    <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-bold text-slate-600">{lang === "fa" ? "تاریخ و زمان ارسال:" : "Delivery Date & Time:"}</label>
                       <input
                         type="datetime-local"
@@ -592,7 +850,7 @@ export default function App() {
                         id="sched-datetime"
                       />
                     </div>
-                  </div>
+                  )}
 
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-slate-600">{lang === "fa" ? "متن پیام خروجی:" : "Outgoing SMS Text:"}</label>
@@ -600,7 +858,7 @@ export default function App() {
                       value={schedText}
                       onChange={(e) => setSchedText(e.target.value)}
                       rows={2}
-                      placeholder={lang === "fa" ? "پیامی که مایل هستید در زمان مشخص ارسال شود را تایپ کنید..." : "Type the text message to schedule..."}
+                      placeholder={lang === "fa" ? "پیامی که مایل هستید ارسال شود را تایپ کنید..." : "Type the text message to send..."}
                       className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 focus:outline-hidden resize-none leading-relaxed"
                       id="sched-text"
                     />
@@ -609,11 +867,19 @@ export default function App() {
                   <button
                     type="submit"
                     disabled={scheduling}
-                    className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md shadow-amber-50 transition-all flex items-center justify-center gap-1.5"
+                    className={`font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-1.5 ${
+                      sendInstantly 
+                        ? "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-50" 
+                        : "bg-amber-500 hover:bg-amber-600 text-white shadow-amber-50"
+                    }`}
                     id="sched-submit-btn"
                   >
-                    <Clock className="w-4.5 h-4.5" />
-                    <span>{lang === "fa" ? "افزودن به صف زمان‌بندی خروجی" : "Add to Scheduling Outbox"}</span>
+                    {sendInstantly ? <Send className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                    <span>
+                      {sendInstantly 
+                        ? (lang === "fa" ? "ارسال فوری پیامک واقعی" : "Send Real SMS Instantly") 
+                        : (lang === "fa" ? "افزودن به صف زمان‌بندی خروجی" : "Add to Scheduling Outbox")}
+                    </span>
                   </button>
                 </form>
 
@@ -805,6 +1071,30 @@ export default function App() {
                     <MessageSquare className="w-4 h-4 text-blue-600" />
                     <span className="font-extrabold text-sm text-slate-800">{lang === "fa" ? "پیامک‌ها" : "Messages"}</span>
                   </div>
+                  
+                  {/* Real vs Demo Toggle */}
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    <button
+                      onClick={() => {
+                        setSmsViewSource("real");
+                        checkAndLoadNativeSms();
+                      }}
+                      className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-all ${
+                        smsViewSource === "real" ? "bg-blue-600 text-white shadow-xs" : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      {lang === "fa" ? "واقعی" : "Real"}
+                    </button>
+                    <button
+                      onClick={() => setSmsViewSource("demo")}
+                      className={`px-2 py-0.5 text-[9px] font-bold rounded-md transition-all ${
+                        smsViewSource === "demo" ? "bg-blue-600 text-white shadow-xs" : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      {lang === "fa" ? "دمو" : "Demo"}
+                    </button>
+                  </div>
+
                   {/* Floating Action / Trigger button inside Header */}
                   <button 
                     onClick={() => {
@@ -869,80 +1159,124 @@ export default function App() {
               </div>
 
               {/* SMS List Area Inside Smartphone */}
-              <div className="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-2 relative" id="phone-sms-list">
+              <div className="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-2 relative bg-slate-50/50 shadow-inner" id="phone-sms-list">
                 
-                {filteredMessages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-48 text-center text-slate-400 px-4">
-                    <MessageSquare className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-xs font-semibold">{lang === "fa" ? "پیامکی یافت نشد" : "No Messages Found"}</p>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      {lang === "fa" 
-                        ? "می‌توانید از منوی بالا پیامک جدیدی شبیه‌سازی کنید." 
-                        : "Try simulating or sending a test SMS from the control room."}
-                    </p>
+                {smsViewSource === "real" && !hasSmsPermission ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8 bg-blue-50/40 border border-blue-100 rounded-2xl m-2 gap-3.5">
+                    <div className="bg-blue-600 text-white p-3 rounded-full shadow-md shadow-blue-100">
+                      <Smartphone className="w-6 h-6 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-xs text-slate-800">{lang === "fa" ? "دسترسی به پیامک‌های واقعی" : "Real SMS Permissions"}</h3>
+                      <p className="text-[10px] text-slate-600 mt-1.5 leading-relaxed">
+                        {lang === "fa" 
+                          ? "برای اتصال به سیم‌کارت و خواندن پیامک‌های واقعی ورودی، لطفا دسترسی لازم را صادر کنید." 
+                          : "To securely fetch and classify your native SIM messages, please authorize SMS permissions."}
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleRequestPermission}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-2 px-4 rounded-xl shadow-xs transition-all flex items-center gap-1"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{lang === "fa" ? "اعطای دسترسی به پیامک‌ها" : "Grant SMS Permission"}</span>
+                    </button>
                   </div>
                 ) : (
-                  filteredMessages.map((msg) => {
-                    const cfg = getCategoryConfig(msg.category);
-                    const IconComponent = cfg.icon;
-                    const dateObj = new Date(msg.timestamp);
-
-                    return (
-                      <div
-                        key={msg.id}
-                        onClick={() => {
-                          setSelectedSMS(msg);
-                          handleMarkAsRead(msg.id);
-                        }}
-                        className={`p-3 rounded-2xl border transition-all duration-150 cursor-pointer flex gap-2.5 relative ${
-                          selectedSMS?.id === msg.id
-                            ? "bg-white border-blue-500 shadow-sm"
-                            : msg.isRead
-                            ? "bg-white/70 border-slate-100 hover:bg-white"
-                            : "bg-blue-50/40 border-blue-100/50 hover:bg-blue-50/60"
-                        }`}
-                        id={`sms-card-${msg.id}`}
-                      >
-                        {/* New Unread Badge dot */}
-                        {!msg.isRead && (
-                          <div className={`absolute top-3 ${lang === "fa" ? "left-3" : "right-3"} w-2 h-2 bg-blue-600 rounded-full`} />
-                        )}
-
-                        {/* Category Left Icon */}
-                        <div className={`p-2 rounded-xl border ${cfg.bgLight} shrink-0 self-start`}>
-                          <IconComponent className="w-4 h-4" />
-                        </div>
-
-                        {/* Content text */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between items-center mb-0.5">
-                            <span className="font-bold text-xs text-slate-800 truncate">
-                              {msg.senderName || msg.sender}
-                            </span>
-                            <span className="text-[9px] text-slate-400">
-                              {dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          </div>
-
-                          <p className="text-slate-600 text-xs truncate leading-normal">
-                            {msg.text}
-                          </p>
-
-                          {/* Quick AI category badge inside the feed */}
-                          <div className="flex items-center gap-1 mt-1.5">
-                            <span className={`text-[9px] px-2 py-0.25 rounded-full font-bold border ${cfg.bgLight}`}>
-                              {lang === "fa" ? cfg.labelFa : cfg.labelEn}
-                            </span>
-                            {msg.status === "scheduled" && (
-                              <span className="text-[9px] px-2 py-0.25 rounded-full font-bold border border-amber-200 bg-amber-50 text-amber-700">
-                                {lang === "fa" ? "زمان‌بندی شده" : "Scheduled"}
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                  <>
+                    {smsViewSource === "real" && (
+                      <div className="flex justify-between items-center px-2 py-1 shrink-0 bg-slate-100/50 rounded-lg border border-slate-200/50 mb-1">
+                        <span className="text-[9px] text-slate-500 font-bold flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                          {lang === "fa" ? "پیامک‌های واقعی سیم‌کارت" : "Real SIM Inbox Connected"}
+                        </span>
+                        <button
+                          onClick={loadNativeSms}
+                          disabled={loading}
+                          className="text-[9px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+                          <span>{lang === "fa" ? "بروزرسانی" : "Sync Now"}</span>
+                        </button>
                       </div>
-                    );
-                  })
+                    )}
+
+                    {filteredMessages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-48 text-center text-slate-400 px-4">
+                        <MessageSquare className="w-8 h-8 text-slate-300 mb-2" />
+                        <p className="text-xs font-semibold">{lang === "fa" ? "پیامکی یافت نشد" : "No Messages Found"}</p>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          {lang === "fa" 
+                            ? (smsViewSource === "real" ? "هیچ پیامک واقعی در صندوق ورودی دستگاه یافت نشد." : "می‌توانید از منوی بالا پیامک جدیدی شبیه‌سازی کنید.")
+                            : (smsViewSource === "real" ? "No messages found in your device's native inbox." : "Try simulating or sending a test SMS from the control room.")}
+                        </p>
+                      </div>
+                    ) : (
+                      filteredMessages.map((msg) => {
+                        const cfg = getCategoryConfig(msg.category);
+                        const IconComponent = cfg.icon;
+                        const dateObj = new Date(msg.timestamp);
+
+                        return (
+                          <div
+                            key={msg.id}
+                            onClick={() => {
+                              setSelectedSMS(msg);
+                              if (smsViewSource === "demo") {
+                                handleMarkAsRead(msg.id);
+                              }
+                            }}
+                            className={`p-3 rounded-2xl border transition-all duration-150 cursor-pointer flex gap-2.5 relative ${
+                              selectedSMS?.id === msg.id
+                                ? "bg-white border-blue-500 shadow-sm"
+                                : msg.isRead
+                                ? "bg-white/70 border-slate-100 hover:bg-white"
+                                : "bg-blue-50/40 border-blue-100/50 hover:bg-blue-50/60"
+                            }`}
+                            id={`sms-card-${msg.id}`}
+                          >
+                            {/* New Unread Badge dot */}
+                            {!msg.isRead && (
+                              <div className={`absolute top-3 ${lang === "fa" ? "left-3" : "right-3"} w-2 h-2 bg-blue-600 rounded-full`} />
+                            )}
+
+                            {/* Category Left Icon */}
+                            <div className={`p-2 rounded-xl border ${cfg.bgLight} shrink-0 self-start`}>
+                              <IconComponent className="w-4 h-4" />
+                            </div>
+
+                            {/* Content text */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-center mb-0.5">
+                                <span className="font-bold text-xs text-slate-800 truncate">
+                                  {msg.senderName || msg.sender}
+                                </span>
+                                <span className="text-[9px] text-slate-400">
+                                  {dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </div>
+
+                              <p className="text-slate-600 text-xs truncate leading-normal">
+                                {msg.text}
+                              </p>
+
+                              {/* Quick AI category badge inside the feed */}
+                              <div className="flex items-center gap-1 mt-1.5">
+                                <span className={`text-[9px] px-2 py-0.25 rounded-full font-bold border ${cfg.bgLight}`}>
+                                  {lang === "fa" ? cfg.labelFa : cfg.labelEn}
+                                </span>
+                                {msg.status === "scheduled" && (
+                                  <span className="text-[9px] px-2 py-0.25 rounded-full font-bold border border-amber-200 bg-amber-50 text-amber-700">
+                                    {lang === "fa" ? "زمان‌بندی شده" : "Scheduled"}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </>
                 )}
               </div>
 
@@ -1021,11 +1355,25 @@ export default function App() {
                         <span>{lang === "fa" ? "تحلیل هوشمند هوش مصنوعی" : "AI Cognitive Analysis"}</span>
                       </div>
 
+                      {/* Premium AI Trigger Button for Real SMS */}
+                      {selectedSMS.id.toString().startsWith("real-") && !selectedSMS.summary && (
+                        <button
+                          onClick={() => handleAnalyzeWithAI(selectedSMS)}
+                          disabled={loading}
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm my-1"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                          <span>{lang === "fa" ? "شروع تحلیل هوشمند با هوش مصنوعی" : "Analyze with Premium AI"}</span>
+                        </button>
+                      )}
+
                       {/* Summary Sentence */}
                       <div className="flex flex-col gap-0.5">
                         <span className="text-[10px] font-bold text-indigo-500 uppercase">{lang === "fa" ? "خلاصه مفهوم پیام:" : "Contextual Summary:"}</span>
                         <p className="text-xs text-indigo-950 font-semibold leading-relaxed">
-                          {selectedSMS.summary || (lang === "fa" ? "در حال استخراج خلاصه..." : "Inferred personal text message context.")}
+                          {selectedSMS.summary || (selectedSMS.id.toString().startsWith("real-") 
+                            ? (lang === "fa" ? "تحلیل هوش مصنوعی برای این پیامک هنوز انجام نشده است." : "AI analysis not started for this real message yet.")
+                            : (lang === "fa" ? "در حال استخراج خلاصه..." : "Inferred personal text message context."))}
                         </p>
                       </div>
 

@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.provider.Telephony
+import android.telephony.SmsManager
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -21,25 +22,14 @@ data class SmsMessage(
     val threadId: Long,
     val address: String,
     val body: String,
-    val date: Long,
-    val isRead: Boolean
+    val timestamp: Long,
+    val isRead: Boolean,
+    val type: Int // Telephony.Sms.MESSAGE_TYPE_INBOX or MESSAGE_TYPE_SENT
 )
 
 /**
- * Clean Domain Data Class representing an SMS Conversation Thread.
- */
-data class SmsThread(
-    val threadId: Long,
-    val snippet: String,
-    val msgCount: Int,
-    val date: Long,
-    val address: String,
-    val isRead: Boolean
-)
-
-/**
- * Repository responsible for reading SMS threads and messages from the device's native ContentProvider.
- * Implements best practices for Coroutines, Flow, and explicit permission validation.
+ * Repository responsible for reading SMS threads and messages from the device's native ContentProvider
+ * and sending SMS messages.
  */
 class SmsRepository(private val context: Context) {
 
@@ -56,30 +46,39 @@ class SmsRepository(private val context: Context) {
     }
 
     /**
-     * Fetches all SMS messages inside the inbox, grouped by conversation thread_id.
-     * Emits a list of unique SmsThread objects via a Kotlin Flow running on the I/O Dispatcher.
+     * Checks if the required SEND_SMS permission is granted.
      */
-    fun getSmsThreads(): Flow<List<SmsThread>> = flow {
+    fun hasSendSmsPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.SEND_SMS
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * Fetches all conversations/threads grouped by threadId.
+     * Maps the latest message in each conversation to an SmsMessage.
+     * Emits the unique conversations ordered by timestamp descending.
+     */
+    fun getConversations(): Flow<List<SmsMessage>> = flow {
         if (!hasReadSmsPermission()) {
             emit(emptyList())
             return@flow
         }
 
-        val threadsList = mutableListOf<SmsThread>()
-        
-        // We can query the content://sms/conversations projection or group inbox by thread_id
-        val uri: Uri = Uri.parse("content://sms/inbox")
+        val conversationsMap = mutableMapOf<Long, SmsMessage>()
+        val uri: Uri = Uri.parse("content://sms")
         val projection = arrayOf(
+            Telephony.Sms._ID,
             Telephony.Sms.THREAD_ID,
-            Telephony.Sms.BODY,
             Telephony.Sms.ADDRESS,
+            Telephony.Sms.BODY,
             Telephony.Sms.DATE,
             Telephony.Sms.READ,
-            "count(${Telephony.Sms._ID}) AS msg_count"
+            Telephony.Sms.TYPE
         )
-        
-        // Grouping parameter passed inside selection query parameters
-        val selection = "0==0) GROUP BY (${Telephony.Sms.THREAD_ID}"
+
+        // Query all messages, sorted by date descending so the first one we find for a threadId is the newest
         val sortOrder = "${Telephony.Sms.DATE} DESC"
 
         var cursor: Cursor? = null
@@ -87,37 +86,42 @@ class SmsRepository(private val context: Context) {
             cursor = contentResolver.query(
                 uri,
                 projection,
-                selection,
+                null,
                 null,
                 sortOrder
             )
 
             cursor?.let {
+                val idCol = it.getColumnIndexOrThrow(Telephony.Sms._ID)
                 val threadIdCol = it.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID)
-                val bodyCol = it.getColumnIndexOrThrow(Telephony.Sms.BODY)
                 val addressCol = it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                val bodyCol = it.getColumnIndexOrThrow(Telephony.Sms.BODY)
                 val dateCol = it.getColumnIndexOrThrow(Telephony.Sms.DATE)
                 val readCol = it.getColumnIndexOrThrow(Telephony.Sms.READ)
-                val countCol = it.getColumnIndex("msg_count") // Custom projection column
+                val typeCol = it.getColumnIndexOrThrow(Telephony.Sms.TYPE)
 
                 while (it.moveToNext()) {
                     val threadId = it.getLong(threadIdCol)
-                    val snippet = it.getString(bodyCol) ?: ""
-                    val address = it.getString(addressCol) ?: "Unknown"
-                    val date = it.getLong(dateCol)
-                    val isRead = it.getInt(readCol) == 1
-                    val msgCount = if (countCol != -1) it.getInt(countCol) else 1
+                    
+                    // Since it is sorted by date DESC, we only insert if we haven't seen this threadId yet
+                    if (!conversationsMap.containsKey(threadId)) {
+                        val id = it.getLong(idCol)
+                        val address = it.getString(addressCol) ?: "Unknown"
+                        val body = it.getString(bodyCol) ?: ""
+                        val timestamp = it.getLong(dateCol)
+                        val isRead = it.getInt(readCol) == 1
+                        val type = it.getInt(typeCol)
 
-                    threadsList.add(
-                        SmsThread(
+                        conversationsMap[threadId] = SmsMessage(
+                            id = id,
                             threadId = threadId,
-                            snippet = snippet,
-                            msgCount = msgCount,
-                            date = date,
                             address = address,
-                            isRead = isRead
+                            body = body,
+                            timestamp = timestamp,
+                            isRead = isRead,
+                            type = type
                         )
-                    )
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -126,12 +130,13 @@ class SmsRepository(private val context: Context) {
             cursor?.close()
         }
 
-        emit(threadsList)
+        // Return sorted by latest timestamp descending
+        emit(conversationsMap.values.sortedByDescending { it.timestamp })
     }.flowOn(Dispatchers.IO)
 
     /**
      * Fetches all individual messages belonging to a specific threadId.
-     * Emits a clean List of SmsMessage domain items ordered by date descending.
+     * Emits a clean List of SmsMessage domain items ordered by timestamp ascending.
      */
     fun getMessagesForThread(threadId: Long): Flow<List<SmsMessage>> = flow {
         if (!hasReadSmsPermission()) {
@@ -147,7 +152,8 @@ class SmsRepository(private val context: Context) {
             Telephony.Sms.ADDRESS,
             Telephony.Sms.BODY,
             Telephony.Sms.DATE,
-            Telephony.Sms.READ
+            Telephony.Sms.READ,
+            Telephony.Sms.TYPE
         )
         
         val selection = "${Telephony.Sms.THREAD_ID} = ?"
@@ -171,6 +177,7 @@ class SmsRepository(private val context: Context) {
                 val bodyCol = it.getColumnIndexOrThrow(Telephony.Sms.BODY)
                 val dateCol = it.getColumnIndexOrThrow(Telephony.Sms.DATE)
                 val readCol = it.getColumnIndexOrThrow(Telephony.Sms.READ)
+                val typeCol = it.getColumnIndexOrThrow(Telephony.Sms.TYPE)
 
                 while (it.moveToNext()) {
                     messagesList.add(
@@ -179,8 +186,9 @@ class SmsRepository(private val context: Context) {
                             threadId = it.getLong(threadIdCol),
                             address = it.getString(addressCol) ?: "Unknown",
                             body = it.getString(bodyCol) ?: "",
-                            date = it.getLong(dateCol),
-                            isRead = it.getInt(readCol) == 1
+                            timestamp = it.getLong(dateCol),
+                            isRead = it.getInt(readCol) == 1,
+                            type = it.getInt(typeCol)
                         )
                     )
                 }
@@ -193,4 +201,34 @@ class SmsRepository(private val context: Context) {
 
         emit(messagesList)
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * Sends an SMS message using SmsManager.
+     * Returns true if sent successfully without exceptions.
+     */
+    fun sendSms(address: String, message: String): Boolean {
+        if (!hasSendSmsPermission()) {
+            return false
+        }
+        return try {
+            val smsManager: SmsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                context.getSystemService(SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            }
+            
+            // Divide the message into parts in case it exceeds 160 characters
+            val parts = smsManager.divideMessage(message)
+            if (parts.size > 1) {
+                smsManager.sendMultipartTextMessage(address, null, parts, null, null)
+            } else {
+                smsManager.sendTextMessage(address, null, message, null, null)
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
 }

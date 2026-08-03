@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Permissions Required for full SMS and Contacts capability -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -16,12 +24,10 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:exported="true">
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
         </activity>
 
         <provider
@@ -31,29 +37,36 @@
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths"></meta-data>
+                android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Required for Default SMS App Eligibility -->
+        <!-- BroadcastReceiver for handling incoming SMS messages (Default SMS requirement + High Priority SMS_RECEIVED) -->
         <receiver
             android:name=".SmsReceiver"
             android:permission="android.permission.BROADCAST_SMS"
             android:exported="true">
-            <intent-filter>
+            <!-- SMS_DELIVER is mandatory for default SMS apps -->
+            <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+            <!-- SMS_RECEIVED is the standard action, requested to be configured with high priority -->
+            <intent-filter android:priority="999">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
 
+        <!-- BroadcastReceiver for handling incoming MMS/WAP-Push messages (Default SMS requirement) -->
         <receiver
             android:name=".MmsReceiver"
             android:permission="android.permission.BROADCAST_WAP_PUSH"
             android:exported="true">
-            <intent-filter>
+            <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
                 <data android:mimeType="application/vnd.wap.mms-message" />
             </intent-filter>
         </receiver>
 
+        <!-- Activity to compose new SMS / handle SENDTO intents (Default SMS requirement) -->
         <activity
             android:name=".ComposeSmsActivity"
             android:exported="true">
@@ -69,6 +82,7 @@
             </intent-filter>
         </activity>
 
+        <!-- Service for headless reply / quick responses (Default SMS requirement) -->
         <service
             android:name=".HeadlessSmsSendService"
             android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE"
@@ -82,12 +96,7 @@
                 <data android:scheme="mmsto" />
             </intent-filter>
         </service>
+
     </application>
 
-    <!-- Permissions -->
-
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.SEND_SMS" />
 </manifest>

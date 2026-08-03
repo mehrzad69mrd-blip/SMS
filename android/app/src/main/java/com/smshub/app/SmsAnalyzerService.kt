@@ -8,13 +8,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/**
- * Strict SMS classification categories.
- */
-@Serializable
-enum class SmsCategory {
-    BANK, OTP, PROMOTIONAL, PERSONAL
-}
+
 
 /**
  * Parsed structure of the Gemini AI analysis response.

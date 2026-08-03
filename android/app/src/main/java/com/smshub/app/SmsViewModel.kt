@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -39,6 +42,43 @@ class SmsViewModel(private val repository: SmsRepository) : ViewModel() {
     // Conversations state
     private val _conversationsState = MutableStateFlow<ConversationsUiState>(ConversationsUiState.Idle)
     val conversationsState: StateFlow<ConversationsUiState> = _conversationsState.asStateFlow()
+
+    // Selected category state
+    private val _selectedCategory = MutableStateFlow<SmsCategory>(SmsCategory.ALL)
+    val selectedCategory: StateFlow<SmsCategory> = _selectedCategory.asStateFlow()
+
+    /**
+     * Updates the currently selected category.
+     */
+    fun selectCategory(category: SmsCategory) {
+        _selectedCategory.value = category
+    }
+
+    /**
+     * StateFlow representing conversations filtered by the selected category.
+     */
+    val filteredConversations: StateFlow<ConversationsUiState> = combine(
+        _conversationsState,
+        _selectedCategory
+    ) { state, category ->
+        when (state) {
+            is ConversationsUiState.Success -> {
+                val filteredList = if (category == SmsCategory.ALL) {
+                    state.conversations
+                } else {
+                    state.conversations.filter { message ->
+                        SmsCategorizer.categorize(message.address, message.body) == category
+                    }
+                }
+                ConversationsUiState.Success(filteredList)
+            }
+            else -> state
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ConversationsUiState.Idle
+    )
 
     // Currently selected conversation messages state
     private val _messagesState = MutableStateFlow<MessagesUiState>(MessagesUiState.Idle)

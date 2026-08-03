@@ -164,7 +164,27 @@ fun ConversationListScreen(
     onThreadClick: (Long) -> Unit,
     onComposeClick: () -> Unit
 ) {
-    val state by viewModel.conversationsState.collectAsState()
+    val state by viewModel.filteredConversations.collectAsState()
+    val fullState by viewModel.conversationsState.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
+
+    val categoryCounts = remember(fullState) {
+        val counts = mutableMapOf<SmsCategory, Int>()
+        if (fullState is ConversationsUiState.Success) {
+            val conversations = (fullState as ConversationsUiState.Success).conversations
+            counts[SmsCategory.ALL] = conversations.size
+            
+            val categorized = conversations.groupBy { SmsCategorizer.categorize(it.address, it.body) }
+            SmsCategory.values().forEach { cat ->
+                if (cat != SmsCategory.ALL) {
+                    counts[cat] = categorized[cat]?.size ?: 0
+                }
+            }
+        } else {
+            SmsCategory.values().forEach { counts[it] = 0 }
+        }
+        counts
+    }
 
     Scaffold(
         topBar = {
@@ -192,49 +212,144 @@ fun ConversationListScreen(
             }
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (val uiState = state) {
-                is ConversationsUiState.Loading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            CategoryTabRow(
+                selectedCategory = selectedCategory,
+                categoryCounts = categoryCounts,
+                onCategorySelected = { category ->
+                    viewModel.selectCategory(category)
                 }
-                is ConversationsUiState.Error -> {
-                    Text(
-                        text = "Error loading conversations: ${uiState.exception.localizedMessage}",
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(16.dp)
-                    )
-                }
-                is ConversationsUiState.Success -> {
-                    if (uiState.conversations.isEmpty()) {
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+            ) {
+                when (val uiState = state) {
+                    is ConversationsUiState.Loading -> {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    }
+                    is ConversationsUiState.Error -> {
                         Text(
-                            text = "No conversations found",
-                            color = Color.Gray,
-                            modifier = Modifier.align(Alignment.Center)
+                            text = "Error loading conversations: ${uiState.exception.localizedMessage}",
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(16.dp)
                         )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 80.dp)
-                        ) {
-                            items(uiState.conversations) { message ->
-                                ConversationItem(
-                                    message = message,
-                                    onClick = { onThreadClick(message.threadId) }
-                                )
+                    }
+                    is ConversationsUiState.Success -> {
+                        if (uiState.conversations.isEmpty()) {
+                            Text(
+                                text = "No conversations found in this category",
+                                color = Color.Gray,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = 80.dp)
+                            ) {
+                                items(uiState.conversations) { message ->
+                                    ConversationItem(
+                                        message = message,
+                                        onClick = { onThreadClick(message.threadId) }
+                                    )
+                                }
                             }
                         }
                     }
-                }
-                else -> {
-                    // Idle state
+                    else -> {
+                        // Idle state
+                    }
                 }
             }
+        }
+    }
+}
+
+/**
+ * A Jetpack Compose component using ScrollableTabRow (Material3)
+ * that shows the list of tabs with item counts and smooth selection.
+ */
+@Composable
+fun CategoryTabRow(
+    selectedCategory: SmsCategory,
+    categoryCounts: Map<SmsCategory, Int>,
+    onCategorySelected: (SmsCategory) -> Unit
+) {
+    val categories = SmsCategory.values()
+    val selectedIndex = categories.indexOf(selectedCategory)
+
+    ScrollableTabRow(
+        selectedTabIndex = selectedIndex,
+        edgePadding = 16.dp,
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.primary,
+        divider = {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+        }
+    ) {
+        categories.forEachIndexed { index, category ->
+            val isSelected = index == selectedIndex
+            val count = categoryCounts[category] ?: 0
+            val displayName = when (category) {
+                SmsCategory.ALL -> "All"
+                SmsCategory.PERSONAL -> "Personal"
+                SmsCategory.BANK -> "Bank/Tx"
+                SmsCategory.OTP -> "OTP/Codes"
+                SmsCategory.PROMOTIONAL -> "Promos"
+            }
+
+            Tab(
+                selected = isSelected,
+                onClick = { onCategorySelected(category) },
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = displayName,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 14.sp
+                        )
+                        // Pill-shaped badge for the message count
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = count.toString(),
+                                color = if (isSelected) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            )
         }
     }
 }

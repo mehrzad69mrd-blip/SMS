@@ -1,4 +1,4 @@
-name: Verify and Compile
+name: Build and Export Android APK
 
 on:
   push:
@@ -14,18 +14,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: npm ci || npm install
 
-      - name: Run Type Checking & Linter
+      - name: Run Code Linter & Type Check
         run: npm run lint
 
-      - name: Compile and Build Application
+      - name: Build Web Application (React/Vite)
         run: npm run build
         env:
           NODE_ENV: production
+
+      - name: Sync Web Code with Capacitor Android
+        run: npx cap sync
+
+      - name: Grant Execute Permission to Gradle
+        run: chmod +x android/gradlew
+
+      - name: Build Android Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sms-hub-app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7

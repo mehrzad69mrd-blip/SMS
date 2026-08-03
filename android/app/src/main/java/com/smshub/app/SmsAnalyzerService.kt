@@ -2,6 +2,7 @@ package com.smshub.app
 
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.generationConfig
+import com.google.ai.client.generativeai.type.content
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -39,27 +40,29 @@ class SmsAnalyzerService(apiKey: String) {
             responseMimeType = "application/json"
             temperature = 0.15f // Low temperature for highly deterministic and strict classification output
         },
-        systemInstruction = """
-            You are an expert mobile inbox intelligence assistant. Your task is to analyze an incoming SMS text message and classify it with high precision.
-            
-            You must classify the message into one of these four categories:
-            1. BANK: Transaction updates, balance alerts, deposit/withdrawal notifications, or account statements from financial institutions.
-            2. OTP: One-Time Passwords, verification codes, 2-factor authentication prompts, or security PINs.
-            3. PROMOTIONAL: Marketing campaigns, advertisements, coupon codes, retail offers, or unsolicited spam.
-            4. PERSONAL: Standard direct chat messages, personal conversations, or direct human-to-human communication.
-            
-            Return a JSON object matching this schema exactly:
-            {
-              "category": "BANK" | "OTP" | "PROMOTIONAL" | "PERSONAL",
-              "summary": "A highly precise 1-sentence description summarizing the contextual meaning of the message.",
-              "smartReplies": ["suggestion 1", "suggestion 2", "suggestion 3"]
-            }
-            
-            Guidelines:
-            - For smart replies: Provide exactly 3 short, context-aware reply suggestions or actionable prompt chips (e.g., "Copy OTP", "Check Balance", "Thank you", "Remind me").
-            - Ensure any sensitive information like partial PINs, passwords, and accounts are treated safely in summaries.
-            - Strictly return ONLY the raw JSON string. Do not wrap in markdown delimiters and do not add commentary.
-        """.trimIndent()
+        systemInstruction = content {
+            text("""
+                You are an expert mobile inbox intelligence assistant. Your task is to analyze an incoming SMS text message and classify it with high precision.
+                
+                You must classify the message into one of these four categories:
+                1. BANK: Transaction updates, balance alerts, deposit/withdrawal notifications, or account statements from financial institutions.
+                2. OTP: One-Time Passwords, verification codes, 2-factor authentication prompts, or security PINs.
+                3. PROMOTIONAL: Marketing campaigns, advertisements, coupon codes, retail offers, or unsolicited spam.
+                4. PERSONAL: Standard direct chat messages, personal conversations, or direct human-to-human communication.
+                
+                Return a JSON object matching this schema exactly:
+                {
+                  "category": "BANK" | "OTP" | "PROMOTIONAL" | "PERSONAL",
+                  "summary": "A highly precise 1-sentence description summarizing the contextual meaning of the message.",
+                  "smartReplies": ["suggestion 1", "suggestion 2", "suggestion 3"]
+                }
+                
+                Guidelines:
+                - For smart replies: Provide exactly 3 short, context-aware reply suggestions or actionable prompt chips (e.g., "Copy OTP", "Check Balance", "Thank you", "Remind me").
+                - Ensure any sensitive information like partial PINs, passwords, and accounts are treated safely in summaries.
+                - Strictly return ONLY the raw JSON string. Do not wrap in markdown delimiters and do not add commentary.
+            """.trimIndent())
+        }
     )
 
     private val json = Json {

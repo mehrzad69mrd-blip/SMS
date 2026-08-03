@@ -1,0 +1,6 @@
+{
+  "name": "SMS Hub & Scheduler",
+  "description": "یک سامانه پیشرفته مدیریت، زمان‌بندی و دسته‌بندی هوشمند پیامک‌ها با کمک هوش مصنوعی برای شبیه‌سازی تجربه پیام‌رسان بومی اندروید",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -39,10 +39,10 @@ jobs:
       - name: Sync Web Code with Capacitor Android
         run: npx cap sync
 
-      - name: Regenerate Gradle Wrapper to Fix Corruption
+      - name: Restore Clean Gradle Wrapper Jar
         run: |
-          cd android
-          gradle wrapper
+          mkdir -p android/gradle/wrapper
+          curl -L -o android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.14.3/gradle/wrapper/gradle-wrapper.jar
 
       - name: Grant Execute Permission to Gradle
         run: chmod +x android/gradlew

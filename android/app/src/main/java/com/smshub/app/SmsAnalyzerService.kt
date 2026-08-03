@@ -33,7 +33,7 @@ class SmsAnalyzerService(apiKey: String) {
 
     // Configure the generative model with system instructions and JSON MIME type response format
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-3.6-flash", // Standardized on gemini-3.6-flash for high-performance text tasks
+        modelName = "gemini-1.5-flash", // Using gemini-1.5-flash for maximum client stability and speed
         apiKey = apiKey,
         generationConfig = generationConfig {
             responseMimeType = "application/json"

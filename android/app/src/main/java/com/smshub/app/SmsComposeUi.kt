@@ -127,7 +127,7 @@ fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
             .fillMaxSize()
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = "SMS Hub",

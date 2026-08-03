@@ -82,6 +82,9 @@ dependencies {
     // Kotlinx Serialization JSON (Used for SmsAnalyzerService)
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
 
+    // Google Generative AI SDK (Gemini SDK)
+    implementation 'com.google.ai.client.generativeai:generativeai:0.9.0'
+
     // Testing & Debug Tooling
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

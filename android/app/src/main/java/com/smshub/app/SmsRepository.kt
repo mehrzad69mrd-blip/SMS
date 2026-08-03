@@ -35,6 +35,46 @@ class SmsRepository(private val context: Context) {
 
     private val contentResolver: ContentResolver = context.contentResolver
 
+    fun getDeliveryReportsEnabled(): Boolean {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        return prefs.getBoolean("delivery_reports", false)
+    }
+
+    fun setDeliveryReportsEnabled(enabled: Boolean) {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("delivery_reports", enabled).apply()
+    }
+
+    fun getReadReceiptsEnabled(): Boolean {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        return prefs.getBoolean("read_receipts", true)
+    }
+
+    fun setReadReceiptsEnabled(enabled: Boolean) {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("read_receipts", enabled).apply()
+    }
+
+    fun getAutoDeleteOldEnabled(): Boolean {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        return prefs.getBoolean("auto_delete_old", false)
+    }
+
+    fun setAutoDeleteOldEnabled(enabled: Boolean) {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("auto_delete_old", enabled).apply()
+    }
+
+    fun getCustomSignature(): String {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        return prefs.getString("custom_signature", "") ?: ""
+    }
+
+    fun setCustomSignature(signature: String) {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        prefs.edit().putString("custom_signature", signature).apply()
+    }
+
     /**
      * Checks if the required READ_SMS permission is granted.
      */

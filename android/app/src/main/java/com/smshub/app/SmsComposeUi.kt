@@ -14,8 +14,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,6 +51,16 @@ fun SmsApp(
 ) {
     val selectedThreadId by viewModel.selectedThreadId.collectAsState()
     var showComposeDialog by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+
+    // System Back Press & Gesture Interceptor
+    BackHandler(enabled = showSettings) {
+        showSettings = false
+    }
+
+    BackHandler(enabled = selectedThreadId != null) {
+        viewModel.clearSelectedThread()
+    }
 
     MaterialTheme(
         colorScheme = lightColorScheme(
@@ -60,56 +76,67 @@ fun SmsApp(
             onSurface = Color(0xFF0F172A)
         )
     ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            if (!hasPermissions) {
-                PermissionRequestScreen(onRequestPermissions)
-            } else {
-                LaunchedEffect(Unit) {
-                    viewModel.loadConversations()
-                }
-
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (selectedThreadId == null) {
-                        ConversationListScreen(
-                            viewModel = viewModel,
-                            onThreadClick = { threadId ->
-                                viewModel.selectThread(threadId)
-                            },
-                            onComposeClick = {
-                                showComposeDialog = true
-                            }
-                        )
-                    } else {
-                        val conversationsState by viewModel.conversationsState.collectAsState()
-                        var activeAddress = "Unknown"
-                        if (conversationsState is ConversationsUiState.Success) {
-                            val activeThread = (conversationsState as ConversationsUiState.Success)
-                                .conversations.find { it.threadId == selectedThreadId }
-                            if (activeThread != null) {
-                                activeAddress = activeThread.address
-                            }
-                        }
-
-                        ChatScreen(
-                            viewModel = viewModel,
-                            address = activeAddress,
-                            onBackClick = {
-                                viewModel.clearSelectedThread()
-                            }
-                        )
+        // Enforce RTL Layout Direction for complete Persian support
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                if (!hasPermissions) {
+                    PermissionRequestScreen(onRequestPermissions)
+                } else {
+                    LaunchedEffect(Unit) {
+                        viewModel.loadConversations()
                     }
 
-                    if (showComposeDialog) {
-                        ComposeMessageDialog(
-                            onDismiss = { showComposeDialog = false },
-                            onSend = { address, body ->
-                                viewModel.sendMessage(address, body)
-                                showComposeDialog = false
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        if (showSettings) {
+                            SettingsScreen(
+                                viewModel = viewModel,
+                                onBackClick = { showSettings = false }
+                            )
+                        } else if (selectedThreadId == null) {
+                            ConversationListScreen(
+                                viewModel = viewModel,
+                                onThreadClick = { threadId ->
+                                    viewModel.selectThread(threadId)
+                                },
+                                onComposeClick = {
+                                    showComposeDialog = true
+                                },
+                                onSettingsClick = {
+                                    showSettings = true
+                                }
+                            )
+                        } else {
+                            val conversationsState by viewModel.conversationsState.collectAsState()
+                            var activeAddress = "ناشناس"
+                            if (conversationsState is ConversationsUiState.Success) {
+                                val activeThread = (conversationsState as ConversationsUiState.Success)
+                                    .conversations.find { it.threadId == selectedThreadId }
+                                if (activeThread != null) {
+                                    activeAddress = activeThread.address
+                                }
                             }
-                        )
+
+                            ChatScreen(
+                                viewModel = viewModel,
+                                address = activeAddress,
+                                onBackClick = {
+                                    viewModel.clearSelectedThread()
+                                }
+                            )
+                        }
+
+                        if (showComposeDialog) {
+                            ComposeMessageDialog(
+                                onDismiss = { showComposeDialog = false },
+                                onSend = { address, body ->
+                                    viewModel.sendMessage(address, body)
+                                    showComposeDialog = false
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -130,7 +157,7 @@ fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "SMS Hub",
+            text = "مرکز پیامک هوشمند",
             style = MaterialTheme.typography.headlineMedium.copy(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -138,10 +165,11 @@ fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Access your conversations securely and respond instantly using native APIs.",
+            text = "به صورت امن به گفتگوها و پیام‌های خود دسترسی داشته باشید و فورا پاسخ دهید.",
             style = MaterialTheme.typography.bodyMedium,
             color = Color.Gray,
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier.padding(horizontal = 16.dp),
+            lineHeight = 22.sp
         )
         Spacer(modifier = Modifier.height(32.dp))
         Button(
@@ -149,7 +177,7 @@ fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
             shape = RoundedCornerShape(12.dp),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
         ) {
-            Text("Grant SMS Permissions", fontSize = 16.sp)
+            Text("اعطای مجوزهای پیامک", fontSize = 16.sp)
         }
     }
 }
@@ -162,7 +190,8 @@ fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
 fun ConversationListScreen(
     viewModel: SmsViewModel,
     onThreadClick: (Long) -> Unit,
-    onComposeClick: () -> Unit
+    onComposeClick: () -> Unit,
+    onSettingsClick: () -> Unit
 ) {
     val state by viewModel.filteredConversations.collectAsState()
     val fullState by viewModel.conversationsState.collectAsState()
@@ -191,10 +220,15 @@ fun ConversationListScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Conversations",
+                        text = "پیام‌ها",
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                },
+                actions = {
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = "تنظیمات")
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -208,7 +242,7 @@ fun ConversationListScreen(
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = CircleShape
             ) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = "Compose Message")
+                Icon(imageVector = Icons.Default.Add, contentDescription = "پیام جدید")
             }
         }
     ) { innerPadding ->
@@ -217,7 +251,8 @@ fun ConversationListScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            CategoryTabRow(
+            // Floating Narrow Capsule Category Bar (Telegram Style)
+            FloatingCapsuleCategoryBar(
                 selectedCategory = selectedCategory,
                 categoryCounts = categoryCounts,
                 onCategorySelected = { category ->
@@ -236,7 +271,7 @@ fun ConversationListScreen(
                     }
                     is ConversationsUiState.Error -> {
                         Text(
-                            text = "Error loading conversations: ${uiState.exception.localizedMessage}",
+                            text = "خطا در بارگذاری گفتگوها: ${uiState.exception.localizedMessage}",
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier
                                 .align(Alignment.Center)
@@ -246,7 +281,7 @@ fun ConversationListScreen(
                     is ConversationsUiState.Success -> {
                         if (uiState.conversations.isEmpty()) {
                             Text(
-                                text = "No conversations found in this category",
+                                text = "هیچ گفتگویی در این دسته‌بندی یافت نشد",
                                 color = Color.Gray,
                                 modifier = Modifier.align(Alignment.Center)
                             )
@@ -274,82 +309,89 @@ fun ConversationListScreen(
 }
 
 /**
- * A Jetpack Compose component using ScrollableTabRow (Material3)
- * that shows the list of tabs with item counts and smooth selection.
+ * A sleek Jetpack Compose component presenting a list of category tabs
+ * styled as modern floating narrow capsules (Telegram-style bar).
  */
 @Composable
-fun CategoryTabRow(
+fun FloatingCapsuleCategoryBar(
     selectedCategory: SmsCategory,
     categoryCounts: Map<SmsCategory, Int>,
     onCategorySelected: (SmsCategory) -> Unit
 ) {
     val categories = SmsCategory.values()
-    val selectedIndex = categories.indexOf(selectedCategory)
+    val scrollState = rememberScrollState()
 
-    ScrollableTabRow(
-        selectedTabIndex = selectedIndex,
-        edgePadding = 16.dp,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.primary,
-        divider = {
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-        }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(scrollState)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        categories.forEachIndexed { index, category ->
-            val isSelected = index == selectedIndex
+        categories.forEach { category ->
+            val isSelected = category == selectedCategory
             val count = categoryCounts[category] ?: 0
             val displayName = when (category) {
-                SmsCategory.ALL -> "All"
-                SmsCategory.PERSONAL -> "Personal"
-                SmsCategory.BANK -> "Bank/Tx"
-                SmsCategory.OTP -> "OTP/Codes"
-                SmsCategory.PROMOTIONAL -> "Promos"
+                SmsCategory.ALL -> "همه"
+                SmsCategory.PERSONAL -> "شخصی"
+                SmsCategory.BANK -> "بانکی"
+                SmsCategory.OTP -> "رمز پویا"
+                SmsCategory.PROMOTIONAL -> "تبلیغاتی"
             }
 
-            Tab(
-                selected = isSelected,
-                onClick = { onCategorySelected(category) },
-                text = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    ) {
-                        Text(
-                            text = displayName,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 14.sp
-                        )
-                        // Pill-shaped badge for the message count
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    },
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = count.toString(),
-                                color = if (isSelected) {
-                                    MaterialTheme.colorScheme.onPrimary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+            val backgroundColor = if (isSelected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            }
+            val textColor = if (isSelected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+
+            val badgeBgColor = if (isSelected) {
+                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+            } else {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            }
+            val badgeTextColor = if (isSelected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.primary
+            }
+
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(backgroundColor)
+                    .clickable { onCategorySelected(category) }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = displayName,
+                    color = textColor,
+                    fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(badgeBgColor)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = JalaliCalendarHelper.convertToPersianDigits(count.toString()),
+                        color = badgeTextColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-            )
+            }
         }
     }
 }
@@ -392,7 +434,7 @@ fun ConversationItem(
                 val initial = if (message.address.isNotEmpty()) {
                     message.address.take(1).uppercase()
                 } else {
-                    "?"
+                    "؟"
                 }
                 Text(
                     text = initial,
@@ -419,7 +461,7 @@ fun ConversationItem(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = formatTimestamp(message.timestamp),
+                        text = JalaliCalendarHelper.formatTimestamp(message.timestamp),
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
@@ -480,7 +522,7 @@ fun ChatScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "برگشت")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -502,7 +544,7 @@ fun ChatScreen(
                     TextField(
                         value = inputMessage,
                         onValueChange = { inputMessage = it },
-                        placeholder = { Text("Text message") },
+                        placeholder = { Text("پیام متنی") },
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(24.dp)),
@@ -527,7 +569,7 @@ fun ChatScreen(
                         ),
                         modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.Send, contentDescription = "Send SMS")
+                        Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = "ارسال")
                     }
                 }
             }
@@ -544,7 +586,7 @@ fun ChatScreen(
                 }
                 is MessagesUiState.Error -> {
                     Text(
-                        text = "Error loading messages: ${uiState.exception.localizedMessage}",
+                        text = "خطا در بارگذاری پیام‌ها: ${uiState.exception.localizedMessage}",
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -554,7 +596,7 @@ fun ChatScreen(
                 is MessagesUiState.Success -> {
                     if (uiState.messages.isEmpty()) {
                         Text(
-                            text = "No messages",
+                            text = "هیچ پیامی وجود ندارد",
                             color = Color.Gray,
                             modifier = Modifier.align(Alignment.Center)
                         )
@@ -575,7 +617,6 @@ fun ChatScreen(
                             contentPadding = PaddingValues(vertical = 16.dp)
                         ) {
                             items(uiState.messages) { msg ->
-                                // Determine if the message is Sent or Received based on its SMS Type
                                 val isSentByMe = msg.type == 2 // MESSAGE_TYPE_SENT
                                 ChatBubble(message = msg, isSentByMe = isSentByMe)
                             }
@@ -636,7 +677,7 @@ fun ChatBubble(
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = formatDetailedTime(message.timestamp),
+            text = JalaliCalendarHelper.formatDetailedTime(message.timestamp),
             fontSize = 10.sp,
             color = Color.Gray,
             modifier = Modifier.padding(horizontal = 4.dp)
@@ -672,7 +713,7 @@ fun ComposeMessageDialog(
                     .fillMaxWidth()
             ) {
                 Text(
-                    text = "New Message",
+                    text = "پیام جدید",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -681,7 +722,7 @@ fun ComposeMessageDialog(
                 OutlinedTextField(
                     value = address,
                     onValueChange = { address = it },
-                    label = { Text("To (Phone number)") },
+                    label = { Text("به (شماره تلفن)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -691,7 +732,7 @@ fun ComposeMessageDialog(
                 OutlinedTextField(
                     value = body,
                     onValueChange = { body = it },
-                    label = { Text("Message") },
+                    label = { Text("متن پیام") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp),
@@ -704,7 +745,7 @@ fun ComposeMessageDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel")
+                        Text("لغو")
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
@@ -715,7 +756,7 @@ fun ComposeMessageDialog(
                         },
                         enabled = address.isNotBlank() && body.isNotBlank()
                     ) {
-                        Text("Send")
+                        Text("ارسال")
                     }
                 }
             }
@@ -724,30 +765,260 @@ fun ComposeMessageDialog(
 }
 
 /**
- * Helper to display a relative date snippet (e.g. "Today", "Yesterday", or "MMM dd").
+ * Full page-like Settings view.
  */
-private fun formatTimestamp(timestamp: Long): String {
-    val date = Date(timestamp)
-    val now = Calendar.getInstance()
-    val msgTime = Calendar.getInstance().apply { time = date }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    viewModel: SmsViewModel,
+    onBackClick: () -> Unit
+) {
+    val deliveryReports by viewModel.deliveryReports.collectAsState()
+    val readReceipts by viewModel.readReceipts.collectAsState()
+    val autoDeleteOld by viewModel.autoDeleteOld.collectAsState()
+    val customSignature by viewModel.customSignature.collectAsState()
 
-    return if (now.get(Calendar.YEAR) == msgTime.get(Calendar.YEAR)) {
-        if (now.get(Calendar.DAY_OF_YEAR) == msgTime.get(Calendar.DAY_OF_YEAR)) {
-            SimpleDateFormat("h:mm a", Locale.getDefault()).format(date)
-        } else if (now.get(Calendar.DAY_OF_YEAR) - msgTime.get(Calendar.DAY_OF_YEAR) == 1) {
-            "Yesterday"
-        } else {
-            SimpleDateFormat("MMM dd", Locale.getDefault()).format(date)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "تنظیمات پیام",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "برگشت")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
         }
-    } else {
-        SimpleDateFormat("MM/dd/yy", Locale.getDefault()).format(date)
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Option 1: Delivery Reports
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "گزارش تحویل (Delivery Reports)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "درخواست گزارش تحویل برای پیام‌های ارسال شده",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+                Switch(
+                    checked = deliveryReports,
+                    onCheckedChange = { viewModel.setDeliveryReports(it) }
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // Option 2: Read Receipts
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "تأییدیه خوانده شدن",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "ارسال تأییدیه هنگام خوانده شدن پیام‌ها توسط شما",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+                Switch(
+                    checked = readReceipts,
+                    onCheckedChange = { viewModel.setReadReceipts(it) }
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // Option 3: Auto delete
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "حذف خودکار پیام‌های قدیمی",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "حذف خودکار پیام‌های قدیمی‌تر از یک سال برای خالی کردن فضا",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+                Switch(
+                    checked = autoDeleteOld,
+                    onCheckedChange = { viewModel.setAutoDeleteOld(it) }
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // Option 4: Custom Signature
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "امضای پیامک",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "افزودن خودکار متن به انتهای پیام‌های ارسالی",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                OutlinedTextField(
+                    value = customSignature,
+                    onValueChange = { viewModel.setCustomSignature(it) },
+                    placeholder = { Text("مثال: فرستاده شده از گوشی من") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        }
     }
 }
 
 /**
- * Detailed timestamp format inside chat bubble.
+ * Super precise Gregorian to Jalali (Solar Hijri) date conversion helper.
  */
-private fun formatDetailedTime(timestamp: Long): String {
-    val date = Date(timestamp)
-    return SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(date)
+object JalaliCalendarHelper {
+    fun convertToPersianDigits(input: String): String {
+        return input.replace('0', '۰')
+            .replace('1', '۱')
+            .replace('2', '۲')
+            .replace('3', '۳')
+            .replace('4', '۴')
+            .replace('5', '۵')
+            .replace('6', '۶')
+            .replace('7', '۷')
+            .replace('8', '۸')
+            .replace('9', '۹')
+    }
+
+    fun getJalaliDateString(timestamp: Long): String {
+        val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
+        val gy = cal.get(Calendar.YEAR)
+        val gm = cal.get(Calendar.MONTH) + 1
+        val gd = cal.get(Calendar.DAY_OF_MONTH)
+
+        val gDaysInMonth = intArrayOf(0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+        val jDaysInMonth = intArrayOf(0, 31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29)
+
+        val isLeapGregorian = (gy % 4 == 0 && gy % 100 != 0) || (gy % 400 == 0)
+        if (isLeapGregorian) gDaysInMonth[2] = 29
+
+        var gDayNo = 0
+        for (i in 1 until gm) {
+            gDayNo += gDaysInMonth[i]
+        }
+        gDayNo += gd
+
+        val gy2 = gy - 1600
+        var gDayNoTotal = gDayNo + gy2 * 365 + gy2 / 4 - gy2 / 100 + gy2 / 400
+
+        var jy = 979 + 33 * (gDayNoTotal / 12053)
+        gDayNoTotal %= 12053
+
+        val leapPersianPattern = intArrayOf(1, 5, 9, 13, 17, 22, 26, 30)
+        while (gDayNoTotal >= 365) {
+            val isLeapPersian = leapPersianPattern.contains((jy + 1) % 33)
+            val daysInThisYear = if (isLeapPersian) 366 else 365
+            if (gDayNoTotal >= daysInThisYear) {
+                gDayNoTotal -= daysInThisYear
+                jy++
+            } else {
+                break
+            }
+        }
+
+        var jm = 1
+        for (i in 1..12) {
+            val isLeapPersian = leapPersianPattern.contains((jy + 1) % 33)
+            var daysInThisMonth = jDaysInMonth[i]
+            if (i == 12 && isLeapPersian) daysInThisMonth = 30
+            if (gDayNoTotal >= daysInThisMonth) {
+                gDayNoTotal -= daysInThisMonth
+                jm++
+            } else {
+                break
+            }
+        }
+        val jd = gDayNoTotal + 1
+
+        val monthNames = arrayOf(
+            "", "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+            "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
+        )
+
+        return "$jd ${monthNames[jm]} $jy"
+    }
+
+    fun formatTimestamp(timestamp: Long): String {
+        val now = Calendar.getInstance()
+        val msgTime = Calendar.getInstance().apply { timeInMillis = timestamp }
+
+        val sameYear = now.get(Calendar.YEAR) == msgTime.get(Calendar.YEAR)
+        val sameDayOfYear = now.get(Calendar.DAY_OF_YEAR) == msgTime.get(Calendar.DAY_OF_YEAR)
+
+        return if (sameYear && sameDayOfYear) {
+            val df = SimpleDateFormat("HH:mm", Locale.getDefault())
+            convertToPersianDigits(df.format(Date(timestamp)))
+        } else if (sameYear && (now.get(Calendar.DAY_OF_YEAR) - msgTime.get(Calendar.DAY_OF_YEAR) == 1)) {
+            "دیروز"
+        } else {
+            convertToPersianDigits(getJalaliDateString(timestamp))
+        }
+    }
+
+    fun formatDetailedTime(timestamp: Long): String {
+        val dateString = getJalaliDateString(timestamp)
+        val df = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val timeString = df.format(Date(timestamp))
+        return convertToPersianDigits("$dateString، ساعت $timeString")
+    }
 }

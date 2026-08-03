@@ -47,6 +47,39 @@ class SmsViewModel(private val repository: SmsRepository) : ViewModel() {
     private val _selectedCategory = MutableStateFlow<SmsCategory>(SmsCategory.ALL)
     val selectedCategory: StateFlow<SmsCategory> = _selectedCategory.asStateFlow()
 
+    // Message Settings States
+    private val _deliveryReports = MutableStateFlow(repository.getDeliveryReportsEnabled())
+    val deliveryReports: StateFlow<Boolean> = _deliveryReports.asStateFlow()
+
+    private val _readReceipts = MutableStateFlow(repository.getReadReceiptsEnabled())
+    val readReceipts: StateFlow<Boolean> = _readReceipts.asStateFlow()
+
+    private val _autoDeleteOld = MutableStateFlow(repository.getAutoDeleteOldEnabled())
+    val autoDeleteOld: StateFlow<Boolean> = _autoDeleteOld.asStateFlow()
+
+    private val _customSignature = MutableStateFlow(repository.getCustomSignature())
+    val customSignature: StateFlow<String> = _customSignature.asStateFlow()
+
+    fun setDeliveryReports(enabled: Boolean) {
+        repository.setDeliveryReportsEnabled(enabled)
+        _deliveryReports.value = enabled
+    }
+
+    fun setReadReceipts(enabled: Boolean) {
+        repository.setReadReceiptsEnabled(enabled)
+        _readReceipts.value = enabled
+    }
+
+    fun setAutoDeleteOld(enabled: Boolean) {
+        repository.setAutoDeleteOldEnabled(enabled)
+        _autoDeleteOld.value = enabled
+    }
+
+    fun setCustomSignature(signature: String) {
+        repository.setCustomSignature(signature)
+        _customSignature.value = signature
+    }
+
     /**
      * Updates the currently selected category.
      */

@@ -13,6 +13,8 @@ export interface RealSMSPluginType {
   requestPermission(): Promise<{ requested: boolean }>;
   getInboxSMS(): Promise<{ messages: NativeSMS[] }>;
   sendRealSMS(options: { phoneNumber: string; messageText: string }): Promise<{ success: boolean }>;
+  isDefaultSmsApp(): Promise<{ isDefault: boolean }>;
+  requestDefaultSmsApp(): Promise<{ requested: boolean }>;
 }
 
 // Register the custom Capacitor native plugin
@@ -64,3 +66,26 @@ export const sendNativeSMS = async (phoneNumber: string, messageText: string): P
     return false;
   }
 };
+
+export const checkIsDefaultSmsApp = async (): Promise<boolean> => {
+  if (!isNativeAndroid()) return false;
+  try {
+    const result = await RealSMSNative.isDefaultSmsApp();
+    return result.isDefault;
+  } catch (err) {
+    console.error("Error checking default SMS status:", err);
+    return false;
+  }
+};
+
+export const promptSetDefaultSmsApp = async (): Promise<boolean> => {
+  if (!isNativeAndroid()) return false;
+  try {
+    const result = await RealSMSNative.requestDefaultSmsApp();
+    return result.requested;
+  } catch (err) {
+    console.error("Error requesting default SMS setup:", err);
+    return false;
+  }
+};
+

@@ -3,10 +3,12 @@ package com.smshub.app;
 import android.Manifest;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.Telephony;
 import android.telephony.SmsManager;
 import androidx.core.content.ContextCompat;
 import androidx.core.app.ActivityCompat;
@@ -128,6 +130,32 @@ public class RealSMSPlugin extends Plugin {
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Failed to send SMS: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void isDefaultSmsApp(PluginCall call) {
+        boolean isDefault = false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            String defaultSmsApp = Telephony.Sms.getDefaultSmsPackage(getContext());
+            isDefault = getContext().getPackageName().equals(defaultSmsApp);
+        }
+        JSObject ret = new JSObject();
+        ret.put("isDefault", isDefault);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void requestDefaultSmsApp(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            Intent intent = new Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT);
+            intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, getContext().getPackageName());
+            getActivity().startActivityForResult(intent, 1234);
+            JSObject ret = new JSObject();
+            ret.put("requested", true);
+            call.resolve(ret);
+        } else {
+            call.reject("Not supported on this Android version");
         }
     }
 }

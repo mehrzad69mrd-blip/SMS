@@ -13,7 +13,9 @@ import {
   checkSmsPermissions, 
   requestSmsPermissions, 
   fetchRealInboxSMS, 
-  sendNativeSMS 
+  sendNativeSMS,
+  checkIsDefaultSmsApp,
+  promptSetDefaultSmsApp
 } from "./lib/realSms";
 
 export default function App() {
@@ -49,6 +51,7 @@ export default function App() {
   // Native Android Integration States
   const [isAndroid, setIsAndroid] = useState(false);
   const [hasSmsPermission, setHasSmsPermission] = useState(false);
+  const [isDefaultSms, setIsDefaultSms] = useState(false);
   const [smsViewSource, setSmsViewSource] = useState<"demo" | "real">("demo");
   const [nativeSmsList, setNativeSmsList] = useState<SimulatedSMS[]>([]);
 
@@ -154,6 +157,16 @@ export default function App() {
     if (granted) {
       await loadNativeSms();
     }
+    const isDef = await checkIsDefaultSmsApp();
+    setIsDefaultSms(isDef);
+  };
+
+  const handleSetDefaultSms = async () => {
+    await promptSetDefaultSmsApp();
+    setTimeout(async () => {
+      const isDef = await checkIsDefaultSmsApp();
+      setIsDefaultSms(isDef);
+    }, 2000);
   };
 
   const handleRequestPermission = async () => {
@@ -1185,19 +1198,40 @@ export default function App() {
                 ) : (
                   <>
                     {smsViewSource === "real" && (
-                      <div className="flex justify-between items-center px-2 py-1 shrink-0 bg-slate-100/50 rounded-lg border border-slate-200/50 mb-1">
-                        <span className="text-[9px] text-slate-500 font-bold flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                          {lang === "fa" ? "پیامک‌های واقعی سیم‌کارت" : "Real SIM Inbox Connected"}
-                        </span>
-                        <button
-                          onClick={loadNativeSms}
-                          disabled={loading}
-                          className="text-[9px] font-bold text-blue-600 hover:underline flex items-center gap-1"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
-                          <span>{lang === "fa" ? "بروزرسانی" : "Sync Now"}</span>
-                        </button>
+                      <div className="flex flex-col gap-1.5 mb-1 bg-slate-100/50 p-1.5 rounded-lg border border-slate-200/50 shrink-0">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[9px] text-slate-500 font-bold flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                            {lang === "fa" ? "پیامک‌های واقعی سیم‌کارت" : "Real SIM Inbox Connected"}
+                          </span>
+                          <button
+                            onClick={loadNativeSms}
+                            disabled={loading}
+                            className="text-[9px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+                            <span>{lang === "fa" ? "بروزرسانی" : "Sync Now"}</span>
+                          </button>
+                        </div>
+                        
+                        {!isDefaultSms ? (
+                          <div className="flex justify-between items-center bg-blue-50/70 p-1 rounded-md border border-blue-100 mt-1">
+                            <span className="text-[8px] text-blue-700 font-bold">
+                              {lang === "fa" ? "برنامه پیش‌فرض پیامک نیست" : "Not Default SMS App"}
+                            </span>
+                            <button
+                              onClick={handleSetDefaultSms}
+                              className="bg-blue-600 hover:bg-blue-700 text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded-md transition-all"
+                            >
+                              {lang === "fa" ? "انتخاب به عنوان پیش‌فرض" : "Make Default"}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-[8px] text-emerald-700 font-extrabold bg-emerald-50/70 p-1 rounded-md border border-emerald-100 mt-1">
+                            <Check className="w-2.5 h-2.5" />
+                            <span>{lang === "fa" ? "برنامه پیش‌فرض پیامک فعال است" : "Active Default SMS Handler"}</span>
+                          </div>
+                        )}
                       </div>
                     )}
 

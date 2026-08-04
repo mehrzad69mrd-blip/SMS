@@ -43,28 +43,15 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import android.provider.Telephony
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import java.text.SimpleDateFormat
 import java.util.*
-
-/**
- * Helper composable to dynamically configure status bar color and dark/light icon appearance.
- */
-@Composable
-fun SetStatusBarColor(color: Color, darkIcons: Boolean) {
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as? Activity)?.window
-            if (window != null) {
-                window.statusBarColor = color.toArgb()
-                val insetsController = WindowCompat.getInsetsController(window, view)
-                insetsController.isAppearanceLightStatusBars = darkIcons
-            }
-        }
-    }
-}
 
 /**
  * Main application entry point for Compose UI.
@@ -83,6 +70,26 @@ fun SmsApp(
     val isDefaultSmsApp by viewModel.isDefaultSmsApp.collectAsState()
     var showComposeDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
+    var isDefaultSmsState by remember {
+        mutableStateOf(Telephony.Sms.getDefaultSmsPackage(context) == context.packageName)
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val isDefault = Telephony.Sms.getDefaultSmsPackage(context) == context.packageName
+                isDefaultSmsState = isDefault
+                viewModel.updateDefaultSmsStatus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     // System Back Press & Gesture Interceptor
     BackHandler(enabled = showSettings) {
@@ -109,11 +116,17 @@ fun SmsApp(
     ) {
         // Enforce RTL Layout Direction for complete Persian support
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-            SetStatusBarColor(
-                color = Color.Transparent,
-                darkIcons = !isDark
-            )
+            val view = LocalView.current
+            if (!view.isInEditMode) {
+                SideEffect {
+                    val window = (view.context as? Activity)?.window
+                    if (window != null) {
+                        window.statusBarColor = Color.Transparent.toArgb()
+                        val insetsController = WindowCompat.getInsetsController(window, view)
+                        insetsController.isAppearanceLightStatusBars = true
+                    }
+                }
+            }
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
@@ -123,9 +136,9 @@ fun SmsApp(
                 if (!hasPermissions) {
                     PermissionRequestScreen(onRequestPermissions)
                 } else {
-                    LaunchedEffect(hasPermissions, isDefaultSmsApp) {
+                    LaunchedEffect(hasPermissions, isDefaultSmsState) {
                         viewModel.loadConversations()
-                        if (hasPermissions && !isDefaultSmsApp) {
+                        if (hasPermissions && !isDefaultSmsState) {
                             onRequestDefaultSmsApp()
                         }
                     }
@@ -139,7 +152,7 @@ fun SmsApp(
                         } else if (selectedThreadId == null) {
                             ConversationListScreen(
                                 viewModel = viewModel,
-                                isDefaultSms = isDefaultSmsApp,
+                                isDefaultSms = isDefaultSmsState,
                                 onRequestDefaultSms = onRequestDefaultSmsApp,
                                 onThreadClick = { threadId ->
                                     viewModel.selectThread(threadId)

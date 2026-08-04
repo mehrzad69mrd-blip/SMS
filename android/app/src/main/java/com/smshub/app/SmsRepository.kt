@@ -255,16 +255,18 @@ class SmsRepository(private val context: Context) {
      * Returns true if sent successfully without exceptions.
      */
     fun sendSms(address: String, message: String): Boolean {
-        if (!hasSendSmsPermission()) {
-            return false
-        }
         return try {
-            val smsManager: SmsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            // Strictly check for SEND_SMS permission before calling sendTextMessage
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+                throw SecurityException("Permission android.permission.SEND_SMS is not granted")
+            }
+
+            val smsManager: SmsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 context.getSystemService(SmsManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
                 SmsManager.getDefault()
-            }
+            } ?: throw Exception("SmsManager is not available")
             
             // Divide the message into parts in case it exceeds 160 characters
             val parts = smsManager.divideMessage(message)

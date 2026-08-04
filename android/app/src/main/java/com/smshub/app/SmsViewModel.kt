@@ -39,6 +39,14 @@ sealed interface MessagesUiState {
  */
 class SmsViewModel(private val repository: SmsRepository) : ViewModel() {
 
+    // Default SMS state
+    private val _isDefaultSmsApp = MutableStateFlow(repository.isDefaultSmsApp())
+    val isDefaultSmsApp: StateFlow<Boolean> = _isDefaultSmsApp.asStateFlow()
+
+    fun updateDefaultSmsStatus() {
+        _isDefaultSmsApp.value = repository.isDefaultSmsApp()
+    }
+
     // Conversations state
     private val _conversationsState = MutableStateFlow<ConversationsUiState>(ConversationsUiState.Idle)
     val conversationsState: StateFlow<ConversationsUiState> = _conversationsState.asStateFlow()

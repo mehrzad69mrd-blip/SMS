@@ -96,6 +96,14 @@ class SmsRepository(private val context: Context) {
     }
 
     /**
+     * Checks if this app is currently the system's Default SMS Application.
+     */
+    fun isDefaultSmsApp(): Boolean {
+        val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
+        return defaultSmsPackage == context.packageName
+    }
+
+    /**
      * Fetches all conversations/threads grouped by threadId.
      * Maps the latest message in each conversation to an SmsMessage.
      * Emits the unique conversations ordered by timestamp descending.

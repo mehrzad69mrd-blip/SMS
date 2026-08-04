@@ -3,7 +3,12 @@ package com.smshub.app
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -32,10 +38,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.app.Activity
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import java.text.SimpleDateFormat
 import java.util.*
+
+/**
+ * Helper composable to dynamically configure status bar color and dark/light icon appearance.
+ */
+@Composable
+fun SetStatusBarColor(color: Color, darkIcons: Boolean) {
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window
+            if (window != null) {
+                window.statusBarColor = color.toArgb()
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.isAppearanceLightStatusBars = darkIcons
+            }
+        }
+    }
+}
 
 /**
  * Main application entry point for Compose UI.
@@ -47,9 +76,11 @@ import java.util.*
 fun SmsApp(
     viewModel: SmsViewModel,
     hasPermissions: Boolean,
-    onRequestPermissions: () -> Unit
+    onRequestPermissions: () -> Unit,
+    onRequestDefaultSmsApp: () -> Unit
 ) {
     val selectedThreadId by viewModel.selectedThreadId.collectAsState()
+    val isDefaultSmsApp by viewModel.isDefaultSmsApp.collectAsState()
     var showComposeDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
 
@@ -78,6 +109,11 @@ fun SmsApp(
     ) {
         // Enforce RTL Layout Direction for complete Persian support
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+            SetStatusBarColor(
+                color = Color.Transparent,
+                darkIcons = !isDark
+            )
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background
@@ -85,8 +121,11 @@ fun SmsApp(
                 if (!hasPermissions) {
                     PermissionRequestScreen(onRequestPermissions)
                 } else {
-                    LaunchedEffect(Unit) {
+                    LaunchedEffect(hasPermissions, isDefaultSmsApp) {
                         viewModel.loadConversations()
+                        if (hasPermissions && !isDefaultSmsApp) {
+                            onRequestDefaultSmsApp()
+                        }
                     }
 
                     Box(modifier = Modifier.fillMaxSize()) {
@@ -98,6 +137,8 @@ fun SmsApp(
                         } else if (selectedThreadId == null) {
                             ConversationListScreen(
                                 viewModel = viewModel,
+                                isDefaultSms = isDefaultSmsApp,
+                                onRequestDefaultSms = onRequestDefaultSmsApp,
                                 onThreadClick = { threadId ->
                                     viewModel.selectThread(threadId)
                                 },
@@ -152,6 +193,8 @@ fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -189,6 +232,8 @@ fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
 @Composable
 fun ConversationListScreen(
     viewModel: SmsViewModel,
+    isDefaultSms: Boolean,
+    onRequestDefaultSms: () -> Unit,
     onThreadClick: (Long) -> Unit,
     onComposeClick: () -> Unit,
     onSettingsClick: () -> Unit
@@ -251,8 +296,75 @@ fun ConversationListScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Floating Narrow Capsule Category Bar (Telegram Style)
-            FloatingCapsuleCategoryBar(
+            val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+            AnimatedVisibility(
+                visible = !isDefaultSms,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDark) Color(0xFF2C241E) else Color(0xFFFFF3E0),
+                        contentColor = if (isDark) Color(0xFFE0E0E0) else Color(0xFF5D4037)
+                    ),
+                    border = BorderStroke(1.dp, if (isDark) Color(0xFF4E3629) else Color(0xFFFFE0B2)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "هشدار",
+                                tint = if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "برنامه پیش‌فرض پیامک نیست",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100)
+                            )
+                        }
+                        
+                        Text(
+                            text = "برای ارسال و دریافت پیام‌های واقعی و کارکرد صحیح برنامه، لطفا این برنامه را به عنوان مدیر پیش‌فرض پیامک‌های خود تنظیم کنید.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDark) Color(0xFFE0E0E0) else Color(0xFF5D4037),
+                            lineHeight = 18.sp
+                        )
+                        
+                        Button(
+                            onClick = onRequestDefaultSms,
+                            modifier = Modifier.align(Alignment.End),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100),
+                                contentColor = if (isDark) Color.Black else Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Text(
+                                text = "تنظیم به عنوان پیش‌فرض",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Telegram-Style Tab Bar
+            TelegramStyleTabBar(
                 selectedCategory = selectedCategory,
                 categoryCounts = categoryCounts,
                 onCategorySelected = { category ->
@@ -310,86 +422,127 @@ fun ConversationListScreen(
 
 /**
  * A sleek Jetpack Compose component presenting a list of category tabs
- * styled as modern floating narrow capsules (Telegram-style bar).
+ * styled to match the exact Telegram Android design style.
  */
 @Composable
-fun FloatingCapsuleCategoryBar(
+fun TelegramStyleTabBar(
     selectedCategory: SmsCategory,
     categoryCounts: Map<SmsCategory, Int>,
     onCategorySelected: (SmsCategory) -> Unit
 ) {
     val categories = SmsCategory.values()
     val scrollState = rememberScrollState()
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
 
-    Row(
+    // Outer Container Background
+    val containerBg = if (isDark) {
+        MaterialTheme.colorScheme.surfaceVariant
+    } else {
+        Color(0xFFF1F2F6)
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(containerBg)
     ) {
-        categories.forEach { category ->
-            val isSelected = category == selectedCategory
-            val count = categoryCounts[category] ?: 0
-            val displayName = when (category) {
-                SmsCategory.ALL -> "همه"
-                SmsCategory.PERSONAL -> "شخصی"
-                SmsCategory.BANK -> "بانکی"
-                SmsCategory.OTP -> "رمز پویا"
-                SmsCategory.PROMOTIONAL -> "تبلیغاتی"
-            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState)
+                .padding(vertical = 4.dp, horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            categories.forEach { category ->
+                val isSelected = category == selectedCategory
+                val count = categoryCounts[category] ?: 0
+                val displayName = when (category) {
+                    SmsCategory.ALL -> "همه"
+                    SmsCategory.PERSONAL -> "شخصی"
+                    SmsCategory.BANK -> "بانکی"
+                    SmsCategory.OTP -> "رمز پویا"
+                    SmsCategory.PROMOTIONAL -> "تبلیغاتی"
+                }
 
-            val backgroundColor = if (isSelected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            }
-            val textColor = if (isSelected) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
-
-            val badgeBgColor = if (isSelected) {
-                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
-            } else {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-            }
-            val badgeTextColor = if (isSelected) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.primary
-            }
-
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(backgroundColor)
-                    .clickable { onCategorySelected(category) }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = displayName,
-                    color = textColor,
-                    fontSize = 13.sp,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                // 1. Tab background transition
+                val tabBgColor by animateColorAsState(
+                    targetValue = if (isSelected) {
+                        if (isDark) MaterialTheme.colorScheme.primaryContainer else Color(0xFFE3F2FD)
+                    } else {
+                        Color.Transparent
+                    },
+                    animationSpec = tween(durationMillis = 220),
+                    label = "tabBgAnim"
                 )
-                Box(
+
+                // 2. Tab text color transition
+                val tabTextColor by animateColorAsState(
+                    targetValue = if (isSelected) {
+                        if (isDark) MaterialTheme.colorScheme.onPrimaryContainer else Color(0xFF1976D2)
+                    } else {
+                        if (isDark) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else Color(0xFF5F6368)
+                    },
+                    animationSpec = tween(durationMillis = 220),
+                    label = "tabTextAnim"
+                )
+
+                // 3. Badge background transition
+                val badgeBgColor by animateColorAsState(
+                    targetValue = if (isSelected) {
+                        if (isDark) MaterialTheme.colorScheme.primary else Color(0xFF1976D2)
+                    } else {
+                        if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f) else Color(0xFFE0E0E0)
+                    },
+                    animationSpec = tween(durationMillis = 220),
+                    label = "badgeBgAnim"
+                )
+
+                // 4. Badge text color transition
+                val badgeTextColor by animateColorAsState(
+                    targetValue = if (isSelected) {
+                        if (isDark) MaterialTheme.colorScheme.onPrimary else Color.White
+                    } else {
+                        if (isDark) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF5F6368)
+                    },
+                    animationSpec = tween(durationMillis = 220),
+                    label = "badgeTextAnim"
+                )
+
+                Row(
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .background(badgeBgColor)
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    contentAlignment = Alignment.Center
+                        .height(32.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(tabBgColor)
+                        .clickable { onCategorySelected(category) }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = JalaliCalendarHelper.convertToPersianDigits(count.toString()),
-                        color = badgeTextColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
+                        text = displayName,
+                        color = tabTextColor,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                     )
+
+                    // Compact count badge
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(badgeBgColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = JalaliCalendarHelper.convertToPersianDigits(count.toString()),
+                            color = badgeTextColor,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

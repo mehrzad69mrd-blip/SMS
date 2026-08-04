@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.enableEdgeToEdge
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -45,7 +46,36 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Default SMS app launcher to prompt system change dialog
+    private val defaultSmsLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        viewModel.updateDefaultSmsStatus()
+    }
+
+    /**
+     * Checks if the current app is the default SMS app and, if not, requests to change it.
+     */
+    fun checkAndRequestDefaultSmsApp() {
+        val packageName = packageName
+        val defaultSmsPackage = android.provider.Telephony.Sms.getDefaultSmsPackage(this)
+        if (defaultSmsPackage != packageName) {
+            val intent = android.content.Intent(android.provider.Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                putExtra(android.provider.Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
+            }
+            defaultSmsLauncher.launch(intent)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::viewModel.isInitialized) {
+            viewModel.updateDefaultSmsStatus()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         // Standard instantiation of domain components
@@ -84,6 +114,9 @@ class MainActivity : ComponentActivity() {
                 hasPermissions = hasPermissionState,
                 onRequestPermissions = {
                     permissionLauncher.launch(requiredPermissions)
+                },
+                onRequestDefaultSmsApp = {
+                    checkAndRequestDefaultSmsApp()
                 }
             )
         }

@@ -159,7 +159,7 @@ class SmsRepository(private val context: Context) {
      */
     fun getThreadIdForAddress(address: String): Long? {
         return try {
-            Telephony.Sms.Threads.getOrCreateThreadId(context, address)
+            Telephony.Threads.getOrCreateThreadId(context, address)
         } catch (e: Exception) {
             e.printStackTrace()
             null

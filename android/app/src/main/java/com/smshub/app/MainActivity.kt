@@ -1,14 +1,20 @@
 package com.smshub.app
 
 import android.Manifest
+import android.app.role.RoleManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Telephony
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -58,12 +64,32 @@ class MainActivity : ComponentActivity() {
      */
     fun checkAndRequestDefaultSmsApp() {
         val packageName = packageName
-        val defaultSmsPackage = android.provider.Telephony.Sms.getDefaultSmsPackage(this)
-        if (defaultSmsPackage != packageName) {
-            val intent = android.content.Intent(android.provider.Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
-                putExtra(android.provider.Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(Context.ROLE_SERVICE) as? RoleManager
+            if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
+                if (!roleManager.isRoleHeld(RoleManager.ROLE_SMS)) {
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                    defaultSmsLauncher.launch(intent)
+                } else {
+                    viewModel.updateDefaultSmsStatus()
+                }
+            } else {
+                val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(this)
+                if (defaultSmsPackage != packageName) {
+                    val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                        putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
+                    }
+                    defaultSmsLauncher.launch(intent)
+                }
             }
-            defaultSmsLauncher.launch(intent)
+        } else {
+            val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(this)
+            if (defaultSmsPackage != packageName) {
+                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                    putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
+                }
+                defaultSmsLauncher.launch(intent)
+            }
         }
     }
 
@@ -77,6 +103,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+
+        // Set status bar icons to dark/black so they are visible on light backgrounds
+        WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = true
 
         // Standard instantiation of domain components
         repository = SmsRepository(applicationContext)

@@ -115,7 +115,9 @@ fun SmsApp(
                 darkIcons = !isDark
             )
             Surface(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding(),
                 color = MaterialTheme.colorScheme.background
             ) {
                 if (!hasPermissions) {

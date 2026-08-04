@@ -31,13 +31,20 @@ class MainActivity : ComponentActivity() {
     private lateinit var viewModel: SmsViewModel
 
     // Required permissions for Full Default SMS functional support
-    private val requiredPermissions = arrayOf(
-        Manifest.permission.READ_SMS,
-        Manifest.permission.RECEIVE_SMS,
-        Manifest.permission.SEND_SMS,
-        Manifest.permission.RECEIVE_MMS,
-        Manifest.permission.READ_CONTACTS
-    )
+    private val requiredPermissions: Array<String>
+        get() {
+            val list = mutableListOf(
+                Manifest.permission.READ_SMS,
+                Manifest.permission.RECEIVE_SMS,
+                Manifest.permission.SEND_SMS,
+                Manifest.permission.RECEIVE_MMS,
+                Manifest.permission.READ_CONTACTS
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                list.add("android.permission.POST_NOTIFICATIONS")
+            }
+            return list.toTypedArray()
+        }
 
     // Permission launcher to handle multi-permission response
     private val permissionLauncher = registerForActivityResult(
@@ -104,6 +111,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        // Set status bar background color to match the main screen color (#F8FAFC)
+        window.statusBarColor = android.graphics.Color.parseColor("#F8FAFC")
         // Set status bar icons to dark/black so they are visible on light backgrounds
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = true
 

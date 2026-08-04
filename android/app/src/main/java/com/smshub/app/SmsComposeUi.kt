@@ -91,6 +91,10 @@ fun SmsApp(
         }
     }
 
+    LaunchedEffect(isDefaultSmsApp) {
+        isDefaultSmsState = isDefaultSmsApp
+    }
+
     // System Back Press & Gesture Interceptor
     BackHandler(enabled = showSettings) {
         showSettings = false
@@ -121,7 +125,7 @@ fun SmsApp(
                 SideEffect {
                     val window = (view.context as? Activity)?.window
                     if (window != null) {
-                        window.statusBarColor = Color.Transparent.toArgb()
+                        window.statusBarColor = Color(0xFFF8FAFC).toArgb()
                         val insetsController = WindowCompat.getInsetsController(window, view)
                         insetsController.isAppearanceLightStatusBars = true
                     }

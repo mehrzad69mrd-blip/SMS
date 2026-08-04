@@ -1,5 +1,6 @@
 package com.smshub.app
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -30,6 +32,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -104,8 +107,29 @@ fun SmsApp(
         viewModel.clearSelectedThread()
     }
 
-    MaterialTheme(
-        colorScheme = lightColorScheme(
+    val appTheme by viewModel.appTheme.collectAsState()
+    val systemInDark = isSystemInDarkTheme()
+    val isDark = when (appTheme) {
+        "light" -> false
+        "dark" -> true
+        else -> systemInDark
+    }
+
+    val colorScheme = if (isDark) {
+        darkColorScheme(
+            primary = Color(0xFF90CAF9),
+            onPrimary = Color(0xFF0D47A1),
+            primaryContainer = Color(0xFF1E3A8A),
+            onPrimaryContainer = Color(0xFFD1E8FF),
+            secondary = Color(0xFF80CBC4),
+            onSecondary = Color(0xFF004D40),
+            background = Color(0xFF121212),
+            surface = Color(0xFF1E1E1E),
+            onBackground = Color(0xFFE2E8F0),
+            onSurface = Color(0xFFE2E8F0)
+        )
+    } else {
+        lightColorScheme(
             primary = Color(0xFF1E3A8A), // Elegant Navy Primary
             onPrimary = Color.White,
             primaryContainer = Color(0xFFDBEAFE),
@@ -117,6 +141,10 @@ fun SmsApp(
             onBackground = Color(0xFF0F172A),
             onSurface = Color(0xFF0F172A)
         )
+    }
+
+    MaterialTheme(
+        colorScheme = colorScheme
     ) {
         // Enforce RTL Layout Direction for complete Persian support
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -125,9 +153,9 @@ fun SmsApp(
                 SideEffect {
                     val window = (view.context as? Activity)?.window
                     if (window != null) {
-                        window.statusBarColor = Color(0xFFF8FAFC).toArgb()
+                        window.statusBarColor = colorScheme.background.toArgb()
                         val insetsController = WindowCompat.getInsetsController(window, view)
-                        insetsController.isAppearanceLightStatusBars = true
+                        insetsController.isAppearanceLightStatusBars = !isDark
                     }
                 }
             }
@@ -171,17 +199,20 @@ fun SmsApp(
                         } else {
                             val conversationsState by viewModel.conversationsState.collectAsState()
                             var activeAddress = "ناشناس"
+                            var activeContactName = ""
                             if (conversationsState is ConversationsUiState.Success) {
                                 val activeThread = (conversationsState as ConversationsUiState.Success)
                                     .conversations.find { it.threadId == selectedThreadId }
                                 if (activeThread != null) {
                                     activeAddress = activeThread.address
+                                    activeContactName = activeThread.contactName
                                 }
                             }
 
                             ChatScreen(
                                 viewModel = viewModel,
                                 address = activeAddress,
+                                contactName = activeContactName,
                                 onBackClick = {
                                     viewModel.clearSelectedThread()
                                 }
@@ -260,6 +291,7 @@ fun ConversationListScreen(
     val state by viewModel.filteredConversations.collectAsState()
     val fullState by viewModel.conversationsState.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
+    var isBannerDismissed by rememberSaveable { mutableStateOf(false) }
 
     val categoryCounts = remember(fullState) {
         val counts = mutableMapOf<SmsCategory, Int>()
@@ -318,7 +350,7 @@ fun ConversationListScreen(
             val isDark = androidx.compose.foundation.isSystemInDarkTheme()
 
             AnimatedVisibility(
-                visible = !isDefaultSms,
+                visible = !isDefaultSms && !isBannerDismissed,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
@@ -338,21 +370,38 @@ fun ConversationListScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = "هشدار",
-                                tint = if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100),
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(
-                                text = "برنامه پیش‌فرض پیامک نیست",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100)
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "هشدار",
+                                    tint = if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Text(
+                                    text = "برنامه پیش‌فرض پیامک نیست",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100)
+                                )
+                            }
+                            IconButton(
+                                onClick = { isBannerDismissed = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "بستن",
+                                    tint = if (isDark) Color(0xFFE0E0E0) else Color(0xFF5D4037),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                         
                         Text(
@@ -603,8 +652,9 @@ fun ConversationItem(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                val initial = if (message.address.isNotEmpty()) {
-                    message.address.take(1).uppercase()
+                val displayName = if (message.contactName.isNotBlank()) message.contactName else message.address
+                val initial = if (displayName.isNotEmpty()) {
+                    displayName.filter { it.isLetterOrDigit() }.take(1).uppercase()
                 } else {
                     "؟"
                 }
@@ -624,8 +674,9 @@ fun ConversationItem(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val displayName = if (message.contactName.isNotBlank()) message.contactName else message.address
                     Text(
-                        text = message.address,
+                        text = displayName,
                         fontWeight = if (!message.isRead) FontWeight.Bold else FontWeight.SemiBold,
                         fontSize = 16.sp,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -676,21 +727,33 @@ fun ConversationItem(
 fun ChatScreen(
     viewModel: SmsViewModel,
     address: String,
+    contactName: String = "",
     onBackClick: () -> Unit
 ) {
     val state by viewModel.messagesState.collectAsState()
     var inputMessage by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    var selectedMessageForOptions by remember { mutableStateOf<SmsMessage?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = address,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 18.sp
-                    )
+                    Column {
+                        val displayName = if (contactName.isNotBlank()) contactName else address
+                        Text(
+                            text = displayName,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 18.sp
+                        )
+                        if (contactName.isNotBlank() && contactName != address) {
+                            Text(
+                                text = address,
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
@@ -784,13 +847,107 @@ fun ChatScreen(
                         ) {
                             items(uiState.messages.reversed()) { msg ->
                                 val isSentByMe = msg.type == 2 // MESSAGE_TYPE_SENT
-                                ChatBubble(message = msg, isSentByMe = isSentByMe)
+                                ChatBubble(
+                                    message = msg,
+                                    isSentByMe = isSentByMe,
+                                    onClick = { selectedMessageForOptions = msg }
+                                )
                             }
                         }
                     }
                 }
                 else -> {
                     // Idle state
+                }
+            }
+        }
+    }
+
+    selectedMessageForOptions?.let { msg ->
+        val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+        val context = androidx.compose.ui.platform.LocalContext.current
+        
+        Dialog(onDismissRequest = { selectedMessageForOptions = null }) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "عملیات پیام",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    // Copy Action
+                    TextButton(
+                        onClick = {
+                            val annotatedString = androidx.compose.ui.text.AnnotatedString(msg.body)
+                            clipboardManager.setText(annotatedString)
+                            android.widget.Toast.makeText(context, "متن پیام کپی شد", android.widget.Toast.LENGTH_SHORT).show()
+                            selectedMessageForOptions = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "کپی متن پیام",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                    
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    
+                    // Delete Action
+                    TextButton(
+                        onClick = {
+                            viewModel.deleteMessage(msg)
+                            selectedMessageForOptions = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "حذف پیام",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    // Cancel Button
+                    Button(
+                        onClick = { selectedMessageForOptions = null },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("انصراف")
+                    }
                 }
             }
         }
@@ -803,12 +960,14 @@ fun ChatScreen(
 @Composable
 fun ChatBubble(
     message: SmsMessage,
-    isSentByMe: Boolean
+    isSentByMe: Boolean,
+    onClick: () -> Unit
 ) {
+    val isDark = isSystemInDarkTheme()
     val bubbleColor = if (isSentByMe) {
         MaterialTheme.colorScheme.primary
     } else {
-        Color(0xFFE2E8F0) // Soft Gray for Received
+        if (isDark) Color(0xFF2D3748) else Color(0xFFE2E8F0) // Soft Gray for Received
     }
 
     val textColor = if (isSentByMe) {
@@ -832,7 +991,9 @@ fun ChatBubble(
         Box(
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .background(color = bubbleColor, shape = bubbleShape)
+                .clip(bubbleShape)
+                .background(color = bubbleColor)
+                .clickable { onClick() }
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             Text(
@@ -943,6 +1104,7 @@ fun SettingsScreen(
     val readReceipts by viewModel.readReceipts.collectAsState()
     val autoDeleteOld by viewModel.autoDeleteOld.collectAsState()
     val customSignature by viewModel.customSignature.collectAsState()
+    val appTheme by viewModel.appTheme.collectAsState()
 
     Scaffold(
         topBar = {
@@ -1084,6 +1246,52 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // Option 5: App Theme Selector
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "تم برنامه (App Theme)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "تغییر ظاهر برنامه به حالت روشن، تاریک یا همگام با سیستم",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val themes = listOf(
+                        "system" to "سیستم",
+                        "light" to "روشن",
+                        "dark" to "تاریک"
+                    )
+                    themes.forEach { (themeKey, label) ->
+                        val selected = appTheme == themeKey
+                        FilterChip(
+                            selected = selected,
+                            onClick = { viewModel.setAppTheme(themeKey) },
+                            label = { Text(text = label, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
         }
     }

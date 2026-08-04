@@ -55,6 +55,7 @@ public class SmsReceiver extends BroadcastReceiver {
 
         Intent intent = new Intent(context, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        intent.putExtra("sender_address", sender);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 context,
                 0,

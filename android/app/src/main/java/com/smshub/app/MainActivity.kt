@@ -107,6 +107,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("sender_address")?.let { address ->
+            if (::viewModel.isInitialized) {
+                viewModel.selectThreadByAddress(address)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -127,6 +137,11 @@ class MainActivity : ComponentActivity() {
             }
         }
         viewModel = ViewModelProvider(this, factory)[SmsViewModel::class.java]
+
+        // Check if opened from a notification click
+        intent.getStringExtra("sender_address")?.let { address ->
+            viewModel.selectThreadByAddress(address)
+        }
 
         // Listen to SMS sending UI events for Toast feedback
         lifecycleScope.launch {

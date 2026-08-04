@@ -68,6 +68,9 @@ class SmsViewModel(private val repository: SmsRepository) : ViewModel() {
     private val _customSignature = MutableStateFlow(repository.getCustomSignature())
     val customSignature: StateFlow<String> = _customSignature.asStateFlow()
 
+    private val _appTheme = MutableStateFlow(repository.getAppTheme())
+    val appTheme: StateFlow<String> = _appTheme.asStateFlow()
+
     fun setDeliveryReports(enabled: Boolean) {
         repository.setDeliveryReportsEnabled(enabled)
         _deliveryReports.value = enabled
@@ -86,6 +89,11 @@ class SmsViewModel(private val repository: SmsRepository) : ViewModel() {
     fun setCustomSignature(signature: String) {
         repository.setCustomSignature(signature)
         _customSignature.value = signature
+    }
+
+    fun setAppTheme(theme: String) {
+        repository.setAppTheme(theme)
+        _appTheme.value = theme
     }
 
     /**
@@ -182,6 +190,18 @@ class SmsViewModel(private val repository: SmsRepository) : ViewModel() {
     }
 
     /**
+     * Selects a specific conversation thread using the sender's phone number/address.
+     */
+    fun selectThreadByAddress(address: String) {
+        viewModelScope.launch {
+            val threadId = repository.getThreadIdForAddress(address)
+            if (threadId != null) {
+                selectThread(threadId)
+            }
+        }
+    }
+
+    /**
      * Sends an SMS message to the given address. If successful, broadcasts a success event
      * and re-triggers the messages reload for the currently selected thread.
      */
@@ -204,6 +224,26 @@ class SmsViewModel(private val repository: SmsRepository) : ViewModel() {
                 }
             } else {
                 _uiEvent.emit(SmsUiEvent.ShowError("Failed to send message. Please verify permissions or balance."))
+            }
+        }
+    }
+
+    /**
+     * Deletes an SMS message and reloads the active thread if successful.
+     */
+    fun deleteMessage(message: SmsMessage) {
+        viewModelScope.launch {
+            val success = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                repository.deleteMessage(message.id)
+            }
+            if (success) {
+                _uiEvent.emit(SmsUiEvent.ShowError("پیام با موفقیت حذف شد"))
+                loadConversations()
+                _selectedThreadId.value?.let { activeId ->
+                    selectThread(activeId)
+                }
+            } else {
+                _uiEvent.emit(SmsUiEvent.ShowError("خطا در حذف پیام. مطمئن شوید برنامه پیش‌فرض پیامک هستید."))
             }
         }
     }

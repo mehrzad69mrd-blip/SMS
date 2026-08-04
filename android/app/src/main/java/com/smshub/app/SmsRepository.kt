@@ -24,7 +24,8 @@ data class SmsMessage(
     val body: String,
     val timestamp: Long,
     val isRead: Boolean,
-    val type: Int // Telephony.Sms.MESSAGE_TYPE_INBOX or MESSAGE_TYPE_SENT
+    val type: Int, // Telephony.Sms.MESSAGE_TYPE_INBOX or MESSAGE_TYPE_SENT
+    val contactName: String = ""
 )
 
 /**
@@ -34,6 +35,46 @@ data class SmsMessage(
 class SmsRepository(private val context: Context) {
 
     private val contentResolver: ContentResolver = context.contentResolver
+    private val contactCache = mutableMapOf<String, String>()
+
+    /**
+     * Resolves a phone number/address to a contact name using the Contacts Provider, with an in-memory cache for performance.
+     */
+    fun getContactName(address: String): String {
+        if (address.isBlank() || address == "Unknown") return address
+        
+        contactCache[address]?.let { return it }
+
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return address
+        }
+
+        var contactName = address
+        var cursor: Cursor? = null
+        try {
+            val uri = Uri.withAppendedPath(
+                android.provider.ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(address)
+            )
+            val projection = arrayOf(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
+            cursor = contentResolver.query(uri, projection, null, null, null)
+            if (cursor != null && cursor.moveToFirst()) {
+                val nameCol = cursor.getColumnIndex(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
+                if (nameCol != -1) {
+                    val name = cursor.getString(nameCol)
+                    if (!name.isNullOrBlank()) {
+                        contactName = name
+                        contactCache[address] = name
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            cursor?.close()
+        }
+        return contactName
+    }
 
     fun getDeliveryReportsEnabled(): Boolean {
         val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
@@ -75,6 +116,16 @@ class SmsRepository(private val context: Context) {
         prefs.edit().putString("custom_signature", signature).apply()
     }
 
+    fun getAppTheme(): String {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        return prefs.getString("app_theme", "system") ?: "system"
+    }
+
+    fun setAppTheme(theme: String) {
+        val prefs = context.getSharedPreferences("sms_settings", Context.MODE_PRIVATE)
+        prefs.edit().putString("app_theme", theme).apply()
+    }
+
     /**
      * Checks if the required READ_SMS permission is granted.
      */
@@ -101,6 +152,18 @@ class SmsRepository(private val context: Context) {
     fun isDefaultSmsApp(): Boolean {
         val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
         return defaultSmsPackage == context.packageName
+    }
+
+    /**
+     * Retrieves or creates the standard system thread ID for a given phone number/address.
+     */
+    fun getThreadIdForAddress(address: String): Long? {
+        return try {
+            Telephony.Sms.Threads.getOrCreateThreadId(context, address)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 
     /**
@@ -159,6 +222,7 @@ class SmsRepository(private val context: Context) {
                         val timestamp = it.getLong(dateCol)
                         val isRead = it.getInt(readCol) == 1
                         val type = it.getInt(typeCol)
+                        val contactName = getContactName(address)
 
                         conversationsMap[threadId] = SmsMessage(
                             id = id,
@@ -167,7 +231,8 @@ class SmsRepository(private val context: Context) {
                             body = body,
                             timestamp = timestamp,
                             isRead = isRead,
-                            type = type
+                            type = type,
+                            contactName = contactName
                         )
                     }
                 }
@@ -228,15 +293,18 @@ class SmsRepository(private val context: Context) {
                 val typeCol = it.getColumnIndexOrThrow(Telephony.Sms.TYPE)
 
                 while (it.moveToNext()) {
+                    val address = it.getString(addressCol) ?: "Unknown"
+                    val contactName = getContactName(address)
                     messagesList.add(
                         SmsMessage(
                             id = it.getLong(idCol),
                             threadId = it.getLong(threadIdCol),
-                            address = it.getString(addressCol) ?: "Unknown",
+                            address = address,
                             body = it.getString(bodyCol) ?: "",
                             timestamp = it.getLong(dateCol),
                             isRead = it.getInt(readCol) == 1,
-                            type = it.getInt(typeCol)
+                            type = it.getInt(typeCol),
+                            contactName = contactName
                         )
                     )
                 }
@@ -297,6 +365,21 @@ class SmsRepository(private val context: Context) {
             contentResolver.update(uri, values, selection, selectionArgs)
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Deletes a specific message by its content ID.
+     */
+    fun deleteMessage(messageId: Long): Boolean {
+        if (!hasReadSmsPermission()) return false
+        return try {
+            val uri = Uri.withAppendedPath(Telephony.Sms.CONTENT_URI, messageId.toString())
+            val rowsDeleted = contentResolver.delete(uri, null, null)
+            rowsDeleted > 0
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 }

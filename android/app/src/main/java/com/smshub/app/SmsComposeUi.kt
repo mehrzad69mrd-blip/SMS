@@ -601,22 +601,16 @@ fun ChatScreen(
                             modifier = Modifier.align(Alignment.Center)
                         )
                     } else {
-                        // Automatically scroll to the end of the chat
-                        LaunchedEffect(uiState.messages.size) {
-                            if (uiState.messages.isNotEmpty()) {
-                                listState.animateScrollToItem(uiState.messages.size - 1)
-                            }
-                        }
-
                         LazyColumn(
                             state = listState,
+                            reverseLayout = true,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(horizontal = 16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(vertical = 16.dp)
                         ) {
-                            items(uiState.messages) { msg ->
+                            items(uiState.messages.reversed()) { msg ->
                                 val isSentByMe = msg.type == 2 // MESSAGE_TYPE_SENT
                                 ChatBubble(message = msg, isSentByMe = isSentByMe)
                             }
@@ -941,54 +935,51 @@ object JalaliCalendarHelper {
     }
 
     fun getJalaliDateString(timestamp: Long): String {
-        val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
-        val gy = cal.get(Calendar.YEAR)
-        val gm = cal.get(Calendar.MONTH) + 1
-        val gd = cal.get(Calendar.DAY_OF_MONTH)
+        val cal = java.util.GregorianCalendar(java.util.TimeZone.getDefault(), java.util.Locale.US).apply { timeInMillis = timestamp }
+        val gy = cal.get(java.util.Calendar.YEAR)
+        val gm = cal.get(java.util.Calendar.MONTH) + 1
+        val gd = cal.get(java.util.Calendar.DAY_OF_MONTH)
 
         val gDaysInMonth = intArrayOf(0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
-        val jDaysInMonth = intArrayOf(0, 31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29)
+        val jDaysInMonth = intArrayOf(31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29)
+
+        var jy = 979
+        val gyShifted = gy - 1600
 
         val isLeapGregorian = (gy % 4 == 0 && gy % 100 != 0) || (gy % 400 == 0)
-        if (isLeapGregorian) gDaysInMonth[2] = 29
+        val febDays = if (isLeapGregorian) 29 else 28
 
-        var gDayNo = 0
+        var gDayNo = 365 * gyShifted + (gyShifted + 3) / 4 - (gyShifted + 99) / 100 + (gyShifted + 399) / 400
         for (i in 1 until gm) {
-            gDayNo += gDaysInMonth[i]
-        }
-        gDayNo += gd
-
-        val gy2 = gy - 1600
-        var gDayNoTotal = gDayNo + gy2 * 365 + gy2 / 4 - gy2 / 100 + gy2 / 400
-
-        var jy = 979 + 33 * (gDayNoTotal / 12053)
-        gDayNoTotal %= 12053
-
-        val leapPersianPattern = intArrayOf(1, 5, 9, 13, 17, 22, 26, 30)
-        while (gDayNoTotal >= 365) {
-            val isLeapPersian = leapPersianPattern.contains((jy + 1) % 33)
-            val daysInThisYear = if (isLeapPersian) 366 else 365
-            if (gDayNoTotal >= daysInThisYear) {
-                gDayNoTotal -= daysInThisYear
-                jy++
+            if (i == 2) {
+                gDayNo += febDays
             } else {
-                break
+                gDayNo += gDaysInMonth[i]
             }
+        }
+        gDayNo += gd - 1
+
+        var jDayNo = gDayNo - 79
+        val jNp = jDayNo / 12053
+        jDayNo %= 12053
+        jy += 33 * jNp
+
+        jy += 4 * (jDayNo / 1461)
+        jDayNo %= 1461
+
+        if (jDayNo >= 366) {
+            jy += (jDayNo - 1) / 365
+            jDayNo = (jDayNo - 1) % 365
         }
 
         var jm = 1
-        for (i in 1..12) {
-            val isLeapPersian = leapPersianPattern.contains((jy + 1) % 33)
-            var daysInThisMonth = jDaysInMonth[i]
-            if (i == 12 && isLeapPersian) daysInThisMonth = 30
-            if (gDayNoTotal >= daysInThisMonth) {
-                gDayNoTotal -= daysInThisMonth
-                jm++
-            } else {
-                break
-            }
+        var i = 0
+        while (i < 11 && jDayNo >= jDaysInMonth[i]) {
+            jDayNo -= jDaysInMonth[i]
+            i++
+            jm++
         }
-        val jd = gDayNoTotal + 1
+        val jd = jDayNo + 1
 
         val monthNames = arrayOf(
             "", "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
@@ -999,16 +990,16 @@ object JalaliCalendarHelper {
     }
 
     fun formatTimestamp(timestamp: Long): String {
-        val now = Calendar.getInstance()
-        val msgTime = Calendar.getInstance().apply { timeInMillis = timestamp }
+        val now = java.util.GregorianCalendar(java.util.TimeZone.getDefault(), java.util.Locale.US)
+        val msgTime = java.util.GregorianCalendar(java.util.TimeZone.getDefault(), java.util.Locale.US).apply { timeInMillis = timestamp }
 
-        val sameYear = now.get(Calendar.YEAR) == msgTime.get(Calendar.YEAR)
-        val sameDayOfYear = now.get(Calendar.DAY_OF_YEAR) == msgTime.get(Calendar.DAY_OF_YEAR)
+        val sameYear = now.get(java.util.Calendar.YEAR) == msgTime.get(java.util.Calendar.YEAR)
+        val sameDayOfYear = now.get(java.util.Calendar.DAY_OF_YEAR) == msgTime.get(java.util.Calendar.DAY_OF_YEAR)
 
         return if (sameYear && sameDayOfYear) {
             val df = SimpleDateFormat("HH:mm", Locale.getDefault())
             convertToPersianDigits(df.format(Date(timestamp)))
-        } else if (sameYear && (now.get(Calendar.DAY_OF_YEAR) - msgTime.get(Calendar.DAY_OF_YEAR) == 1)) {
+        } else if (sameYear && (now.get(java.util.Calendar.DAY_OF_YEAR) - msgTime.get(java.util.Calendar.DAY_OF_YEAR) == 1)) {
             "دیروز"
         } else {
             convertToPersianDigits(getJalaliDateString(timestamp))

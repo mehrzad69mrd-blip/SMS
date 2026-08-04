@@ -271,4 +271,22 @@ class SmsRepository(private val context: Context) {
             false
         }
     }
+
+    /**
+     * Marks all messages in a specific thread as read.
+     */
+    fun markThreadAsRead(threadId: Long) {
+        if (!hasReadSmsPermission()) return
+        try {
+            val values = android.content.ContentValues().apply {
+                put(Telephony.Sms.READ, 1)
+            }
+            val uri = Uri.parse("content://sms")
+            val selection = "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0"
+            val selectionArgs = arrayOf(threadId.toString())
+            contentResolver.update(uri, values, selection, selectionArgs)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 }

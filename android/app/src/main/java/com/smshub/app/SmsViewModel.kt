@@ -148,6 +148,12 @@ class SmsViewModel(private val repository: SmsRepository) : ViewModel() {
         _selectedThreadId.value = threadId
         _messagesState.value = MessagesUiState.Loading
         viewModelScope.launch {
+            // Mark thread as read on IO thread and refresh conversation list
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                repository.markThreadAsRead(threadId)
+            }
+            loadConversations() // Refresh unread count badges on main screen
+            
             repository.getMessagesForThread(threadId)
                 .catch { exception ->
                     _messagesState.value = MessagesUiState.Error(exception)
@@ -164,6 +170,7 @@ class SmsViewModel(private val repository: SmsRepository) : ViewModel() {
     fun clearSelectedThread() {
         _selectedThreadId.value = null
         _messagesState.value = MessagesUiState.Idle
+        loadConversations()
     }
 
     /**
